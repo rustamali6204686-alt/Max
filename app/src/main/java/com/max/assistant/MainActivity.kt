@@ -130,6 +130,31 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             )
         )
 
+        val wakeBtn = Button(this)
+        wakeBtn.text = "Hamesha sunna: chalu / band"
+        wakeBtn.setOnClickListener {
+            if (WakeService.running) {
+                WakeService.stop(this)
+                setStatus("Hamesha sunna band kar diya")
+            } else if (!android.provider.Settings.canDrawOverlays(this)) {
+                setStatus("Display over other apps allow karo, phir dobara dabao")
+                startActivity(
+                    Intent(
+                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + packageName)
+                    )
+                )
+            } else {
+                WakeService.start(this)
+                setStatus("Ab max bolke Max ko bulao")
+            }
+        }
+        root.addView(wakeBtn)
+
+        if (intent.getBooleanExtra("wake", false)) {
+            Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 700)
+        }
+
         setContentView(root)
     }
 
@@ -650,6 +675,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             } catch (e: Exception) {
                 runOnUiThread { setStatus("Error: " + e.message) }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent != null && intent.getBooleanExtra("wake", false)) {
+            Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 700)
         }
     }
 
