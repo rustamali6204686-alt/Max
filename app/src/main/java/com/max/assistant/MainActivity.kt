@@ -20,6 +20,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.text.InputType
 import android.view.ContextThemeWrapper
 import android.view.Gravity
@@ -72,12 +73,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var settingsPanel: LinearLayout
     private val history = JSONArray()
 
+    private var wakeMode = false
     @Volatile private var stopFlag = false
     private var stopView: View? = null
 
     private fun prefs() = getSharedPreferences("max", Context.MODE_PRIVATE)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        wakeMode = intent.getBooleanExtra("wake", false)
+        if (wakeMode) {
+            setTheme(android.R.style.Theme_Translucent_NoTitleBar)
+        }
         super.onCreate(savedInstanceState)
         tts = TextToSpeech(this, this)
 
@@ -133,7 +139,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val clearBtn = Button(this)
         clearBtn.text = "Purani baatein bhula do"
         clearBtn.setOnClickListener {
-            history.remove(0)
             while (history.length() > 0) history.remove(0)
             prefs().edit().remove("history").apply()
             chatView.text = ""
@@ -189,17 +194,34 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         loadHistory()
 
-        if (intent.getBooleanExtra("wake", false)) {
-            Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 700)
+        if (wakeMode) {
+            root.visibility = View.GONE
         }
 
         setContentView(root)
+
+        if (wakeMode) {
+            Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 700)
+        }
     }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale("hi", "IN")
             selectMaleVoice()
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+                override fun onDone(utteranceId: String?) {
+                    if (wakeMode && utteranceId == "max") {
+                        runOnUiThread { finish() }
+                    }
+                }
+                override fun onError(utteranceId: String?) {
+                    if (wakeMode && utteranceId == "max") {
+                        runOnUiThread { finish() }
+                    }
+                }
+            })
         }
     }
 
@@ -225,7 +247,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun setStatus(msg: String) {
-        statusView.text = msg
+        if (::statusView.isInitialized) statusView.text = msg
     }
 
     private fun appendChat(who: String, msg: String) {
@@ -270,7 +292,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
-            override fun onError(error: Int) { setStatus("Sunai nahi diya, dobara dabao") }
+            override fun onError(error: Int) {
+                setStatus("Sunai nahi diya, dobara dabao")
+                if (wakeMode) finish()
+            }
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
             override fun onResults(results: Bundle?) {
@@ -279,6 +304,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     ?.firstOrNull()
                 if (text.isNullOrBlank()) {
                     setStatus("Sunai nahi diya, dobara dabao")
+                    if (wakeMode) finish()
                 } else {
                     askMax(text)
                 }
@@ -402,6 +428,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     i.putExtra(AlarmClock.EXTRA_MINUTES, m)
                     i.putExtra(AlarmClock.EXTRA_MESSAGE, "Max")
                     i.putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(i)
                     return "अलार्म लगा दिया, $h बजकर $m मिनट पर।"
                 }
@@ -411,6 +438,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     val i = Intent(AlarmClock.ACTION_SET_TIMER)
                     i.putExtra(AlarmClock.EXTRA_LENGTH, s)
                     i.putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(i)
                     return "टाइमर लगा दिया, $s सेकंड का।"
                 }
@@ -430,18 +458,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     }
                     if (pkg == null) return "वह ऐप नहीं मिला।"
                     val li = pm.getLaunchIntentForPackage(pkg) ?: return "वह ऐप नहीं खुल पाया।"
+                    li.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(li)
                     return "ऐप खोल दिया।"
                 }
                 "web_search" -> {
                     val q = args.optString("query")
                     if (q.isBlank()) return "क्या खोजना है, समझ नहीं आया।"
-                    startActivity(
-                        Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("https://www.google.com/search?q=" + Uri.encode(q))
-                        )
+                    val i = Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://www.google.com/search?q=" + Uri.encode(q))
                     )
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(i)
                     return "ब्राउज़र में खोज रहा हूँ।"
                 }
                 "call" -> {
@@ -451,7 +480,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         return "कॉन्टैक्ट्स की अनुमति दीजिए, फिर दोबारा बोलिए।"
                     }
                     val number = findNumber(who) ?: return "$who का नंबर नहीं मिला।"
-                    startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(number))))
+                    val i = Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(number)))
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(i)
                     return "नंबर डायल पर खोल दिया, हरा बटन दबाइए।"
                 }
                 "send_sms" -> {
@@ -464,6 +495,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     val number = findNumber(who) ?: return "$who का नंबर नहीं मिला।"
                     val i = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(number)))
                     i.putExtra("sms_body", body)
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(i)
                     return "मैसेज तैयार है, भेज दीजिए।"
                 }
@@ -714,7 +746,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val key = prefs().getString("key", "") ?: ""
         if (key.isBlank()) {
             setStatus("Pehle API key save karo")
-            settingsPanel.visibility = View.VISIBLE
+            if (::settingsPanel.isInitialized) settingsPanel.visibility = View.VISIBLE
+            if (wakeMode) finish()
             return
         }
         appendChat("Tum", userText)
@@ -755,7 +788,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "max")
                 }
             } catch (e: Exception) {
-                runOnUiThread { setStatus("Error: " + e.message) }
+                runOnUiThread {
+                    setStatus("Error: " + e.message)
+                    if (wakeMode) finish()
+                }
             }
         }
     }
@@ -763,6 +799,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         if (intent != null && intent.getBooleanExtra("wake", false)) {
+            wakeMode = true
             Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 700)
         }
     }
