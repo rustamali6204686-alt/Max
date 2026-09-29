@@ -69,6 +69,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var chatView: TextView
     private lateinit var scroll: ScrollView
     private lateinit var keyInput: EditText
+    private lateinit var settingsPanel: LinearLayout
     private val history = JSONArray()
 
     @Volatile private var stopFlag = false
@@ -85,27 +86,62 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.setBackgroundColor(Color.parseColor("#0F1115"))
         root.setPadding(40, 90, 40, 40)
 
+        val topBar = LinearLayout(this)
+        topBar.orientation = LinearLayout.HORIZONTAL
+
         statusView = TextView(this)
         statusView.text = "Max tayyar hai"
         statusView.textSize = 18f
         statusView.setTextColor(Color.WHITE)
-        root.addView(statusView)
+        topBar.addView(
+            statusView,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
+
+        val gearBtn = Button(this)
+        gearBtn.text = "⚙"
+        gearBtn.setOnClickListener {
+            settingsPanel.visibility =
+                if (settingsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+        topBar.addView(gearBtn)
+        root.addView(topBar)
+
+        val savedKey = prefs().getString("key", "") ?: ""
+
+        settingsPanel = LinearLayout(this)
+        settingsPanel.orientation = LinearLayout.VERTICAL
+        settingsPanel.visibility = if (savedKey.isBlank()) View.VISIBLE else View.GONE
 
         keyInput = EditText(this)
         keyInput.hint = "Groq API key yahan paste karo"
         keyInput.setTextColor(Color.WHITE)
         keyInput.setHintTextColor(Color.GRAY)
         keyInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        keyInput.setText(prefs().getString("key", ""))
-        root.addView(keyInput)
+        keyInput.setText(savedKey)
+        settingsPanel.addView(keyInput)
 
         val saveBtn = Button(this)
         saveBtn.text = "Key save karo"
         saveBtn.setOnClickListener {
             prefs().edit().putString("key", keyInput.text.toString().trim()).apply()
             setStatus("Key save ho gayi")
+            settingsPanel.visibility = View.GONE
         }
-        root.addView(saveBtn)
+        settingsPanel.addView(saveBtn)
+
+        val clearBtn = Button(this)
+        clearBtn.text = "Purani baatein bhula do"
+        clearBtn.setOnClickListener {
+            history.remove(0)
+            while (history.length() > 0) history.remove(0)
+            prefs().edit().remove("history").apply()
+            chatView.text = ""
+            setStatus("Naya chat shuru")
+        }
+        settingsPanel.addView(clearBtn)
+
+        root.addView(settingsPanel)
 
         scroll = ScrollView(this)
         chatView = TextView(this)
@@ -151,6 +187,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         root.addView(wakeBtn)
 
+        loadHistory()
+
         if (intent.getBooleanExtra("wake", false)) {
             Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 700)
         }
@@ -161,6 +199,28 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale("hi", "IN")
+            selectMaleVoice()
+        }
+    }
+
+    private fun selectMaleVoice() {
+        val engine = tts ?: return
+        try {
+            val voices = engine.voices ?: return
+            val male = voices.firstOrNull {
+                it.locale.language == "hi" &&
+                    it.name.lowercase().contains("male") &&
+                    !it.name.lowercase().contains("female")
+            } ?: voices.firstOrNull {
+                it.name.lowercase().contains("male") && !it.name.lowercase().contains("female")
+            }
+            if (male != null) {
+                engine.voice = male
+            } else {
+                engine.setPitch(0.82f)
+            }
+        } catch (e: Exception) {
+            engine.setPitch(0.82f)
         }
     }
 
@@ -171,6 +231,25 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun appendChat(who: String, msg: String) {
         chatView.append("$who: $msg\n\n")
         scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+    }
+
+    private fun loadHistory() {
+        val raw = prefs().getString("history", null) ?: return
+        try {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val m = arr.getJSONObject(i)
+                history.put(m)
+                val who = if (m.optString("role") == "user") "Tum" else "Max"
+                appendChat(who, m.optString("content"))
+            }
+        } catch (e: Exception) {
+        }
+    }
+
+    private fun saveHistory() {
+        while (history.length() > 20) history.remove(0)
+        prefs().edit().putString("history", history.toString()).apply()
     }
 
     private fun startListening() {
@@ -635,10 +714,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val key = prefs().getString("key", "") ?: ""
         if (key.isBlank()) {
             setStatus("Pehle API key save karo")
+            settingsPanel.visibility = View.VISIBLE
             return
         }
         appendChat("Tum", userText)
         history.put(JSONObject().put("role", "user").put("content", userText))
+        saveHistory()
         setStatus("Max soch raha hai...")
 
         thread {
@@ -668,6 +749,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
                 runOnUiThread {
                     history.put(JSONObject().put("role", "assistant").put("content", reply))
+                    saveHistory()
                     appendChat("Max", reply)
                     setStatus("Max tayyar hai")
                     tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "max")
