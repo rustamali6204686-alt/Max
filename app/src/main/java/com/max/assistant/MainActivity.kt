@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
@@ -45,15 +46,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private val model = "openai/gpt-oss-120b"
 
-    private val systemPrompt =
-        "Tumhara naam Max hai, Hindi mein isse मैक्स likho. Koi naam pooche to hamesha yahi batao. " +
-        "Tum user ka voice assistant ho. Jawab bahut chhote rakho, 1 se 3 vaakya. " +
-        "Agar user Hindi mein bole to Devanagari script mein jawab likho taaki bolkar sunaya ja sake. " +
-        "Agar English mein bole to English mein jawab do. Emoji ya formatting symbols mat use karo. " +
-        "Torch, alarm, timer, app kholna, call, SMS aur web search ke liye uske alag tools use karo. " +
-        "Kisi app ke andar ka koi bhi kaam (jaise WhatsApp mein msg likhna, YouTube mein kuch dhundhna, " +
-        "settings badalna) ke liye control_screen tool use karo aur goal mein poora kaam likho. " +
-        "Baaki sawaalon ka seedha jawab do."
+    private val accent = Color.parseColor("#2FA98C")
+    private val neutral = Color.parseColor("#2A2F38")
+    private val userBubble = Color.parseColor("#2F6F63")
+    private val maxBubble = Color.parseColor("#22262E")
 
     private val agentPrompt =
         "Tum ek phone control agent ho. Tumhe user ka lakshya, ab tak kiye gaye kaam, aur phone ki screen " +
@@ -67,9 +63,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var recognizer: SpeechRecognizer? = null
     private lateinit var statusView: TextView
-    private lateinit var chatView: TextView
+    private lateinit var chatContainer: LinearLayout
     private lateinit var scroll: ScrollView
     private lateinit var keyInput: EditText
+    private lateinit var nameInput: EditText
+    private lateinit var maleBtn: Button
+    private lateinit var femaleBtn: Button
     private lateinit var settingsPanel: LinearLayout
     private val history = JSONArray()
 
@@ -78,6 +77,20 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var stopView: View? = null
 
     private fun prefs() = getSharedPreferences("max", Context.MODE_PRIVATE)
+
+    private fun buildSystemPrompt(): String {
+        val name = prefs().getString("name", "")?.trim().orEmpty()
+        val nameLine = if (name.isNotEmpty())
+            "User ka naam $name hai, kabhi kabhi unhe naam se bulao. " else ""
+        return "Tumhara naam Max hai, Hindi mein isse मैक्स likho. Koi naam pooche to hamesha yahi batao. " +
+            nameLine +
+            "Tum user ka voice assistant ho. Jawab bahut chhote rakho, 1 se 3 vaakya. " +
+            "Agar user Hindi mein bole to Devanagari script mein jawab likho taaki bolkar sunaya ja sake. " +
+            "Agar English mein bole to English mein jawab do. Emoji ya formatting symbols mat use karo. " +
+            "Torch, alarm, timer, app kholna, call, SMS aur web search ke liye uske alag tools use karo. " +
+            "Kisi app ke andar ka koi bhi kaam control_screen tool se karo aur goal mein poora kaam likho. " +
+            "Baaki sawaalon ka seedha jawab do."
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         wakeMode = intent.getBooleanExtra("wake", false)
@@ -90,14 +103,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
         root.setBackgroundColor(Color.parseColor("#0F1115"))
-        root.setPadding(40, 90, 40, 40)
+        root.setPadding(36, 90, 36, 36)
 
         val topBar = LinearLayout(this)
         topBar.orientation = LinearLayout.HORIZONTAL
+        topBar.setPadding(0, 0, 0, 20)
 
         statusView = TextView(this)
         statusView.text = "Max tayyar hai"
-        statusView.textSize = 18f
+        statusView.textSize = 19f
         statusView.setTextColor(Color.WHITE)
         topBar.addView(
             statusView,
@@ -106,6 +120,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         val gearBtn = Button(this)
         gearBtn.text = "⚙"
+        styleButton(gearBtn, neutral)
         gearBtn.setOnClickListener {
             settingsPanel.visibility =
                 if (settingsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
@@ -114,13 +129,74 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.addView(topBar)
 
         val savedKey = prefs().getString("key", "") ?: ""
+        val savedName = prefs().getString("name", "") ?: ""
 
         settingsPanel = LinearLayout(this)
         settingsPanel.orientation = LinearLayout.VERTICAL
-        settingsPanel.visibility = if (savedKey.isBlank()) View.VISIBLE else View.GONE
+        settingsPanel.setPadding(0, 10, 0, 20)
+        settingsPanel.visibility =
+            if (savedKey.isBlank() || savedName.isBlank()) View.VISIBLE else View.GONE
+
+        val nameLabel = TextView(this)
+        nameLabel.text = "Aapka naam"
+        nameLabel.setTextColor(Color.LTGRAY)
+        nameLabel.textSize = 13f
+        settingsPanel.addView(nameLabel)
+
+        nameInput = EditText(this)
+        nameInput.hint = "Jaise: Rahul"
+        nameInput.setTextColor(Color.WHITE)
+        nameInput.setHintTextColor(Color.GRAY)
+        nameInput.setText(savedName)
+        settingsPanel.addView(nameInput)
+
+        val voiceLabel = TextView(this)
+        voiceLabel.text = "Max ki awaaz"
+        voiceLabel.setTextColor(Color.LTGRAY)
+        voiceLabel.textSize = 13f
+        voiceLabel.setPadding(0, 20, 0, 6)
+        settingsPanel.addView(voiceLabel)
+
+        val voiceRow = LinearLayout(this)
+        voiceRow.orientation = LinearLayout.HORIZONTAL
+
+        maleBtn = Button(this)
+        maleBtn.text = "पुरुष आवाज़"
+        maleBtn.setOnClickListener {
+            prefs().edit().putString("voice_gender", "male").apply()
+            applyVoicePreference()
+            refreshGenderButtons()
+        }
+        voiceRow.addView(
+            maleBtn,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).also {
+                it.marginEnd = 12
+            }
+        )
+
+        femaleBtn = Button(this)
+        femaleBtn.text = "महिला आवाज़"
+        femaleBtn.setOnClickListener {
+            prefs().edit().putString("voice_gender", "female").apply()
+            applyVoicePreference()
+            refreshGenderButtons()
+        }
+        voiceRow.addView(
+            femaleBtn,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        settingsPanel.addView(voiceRow)
+        refreshGenderButtons()
+
+        val keyLabel = TextView(this)
+        keyLabel.text = "Groq API key"
+        keyLabel.setTextColor(Color.LTGRAY)
+        keyLabel.textSize = 13f
+        keyLabel.setPadding(0, 20, 0, 6)
+        settingsPanel.addView(keyLabel)
 
         keyInput = EditText(this)
-        keyInput.hint = "Groq API key yahan paste karo"
+        keyInput.hint = "Yahan paste karo"
         keyInput.setTextColor(Color.WHITE)
         keyInput.setHintTextColor(Color.GRAY)
         keyInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -128,41 +204,48 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         settingsPanel.addView(keyInput)
 
         val saveBtn = Button(this)
-        saveBtn.text = "Key save karo"
+        saveBtn.text = "Save karo"
+        styleButton(saveBtn, accent)
         saveBtn.setOnClickListener {
-            prefs().edit().putString("key", keyInput.text.toString().trim()).apply()
-            setStatus("Key save ho gayi")
+            prefs().edit()
+                .putString("key", keyInput.text.toString().trim())
+                .putString("name", nameInput.text.toString().trim())
+                .apply()
+            setStatus("Settings save ho gayi")
             settingsPanel.visibility = View.GONE
         }
+        settingsPanel.addView(spacer())
         settingsPanel.addView(saveBtn)
 
         val clearBtn = Button(this)
         clearBtn.text = "Purani baatein bhula do"
+        styleButton(clearBtn, neutral)
         clearBtn.setOnClickListener {
             while (history.length() > 0) history.remove(0)
             prefs().edit().remove("history").apply()
-            chatView.text = ""
+            chatContainer.removeAllViews()
             setStatus("Naya chat shuru")
         }
+        settingsPanel.addView(spacer())
         settingsPanel.addView(clearBtn)
 
         root.addView(settingsPanel)
 
         scroll = ScrollView(this)
-        chatView = TextView(this)
-        chatView.textSize = 16f
-        chatView.setTextColor(Color.WHITE)
-        chatView.setPadding(0, 30, 0, 30)
-        scroll.addView(chatView)
+        chatContainer = LinearLayout(this)
+        chatContainer.orientation = LinearLayout.VERTICAL
+        scroll.addView(chatContainer)
         root.addView(
             scroll,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
         )
 
         val micBtn = Button(this)
-        micBtn.text = "Max se bolo"
-        micBtn.textSize = 20f
+        micBtn.text = "🎤  Max se bolo"
+        micBtn.textSize = 18f
+        styleButton(micBtn, accent)
         micBtn.setOnClickListener { startListening() }
+        root.addView(spacer())
         root.addView(
             micBtn,
             LinearLayout.LayoutParams(
@@ -173,6 +256,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         val wakeBtn = Button(this)
         wakeBtn.text = "Hamesha sunna: chalu / band"
+        styleButton(wakeBtn, neutral)
         wakeBtn.setOnClickListener {
             if (WakeService.running) {
                 WakeService.stop(this)
@@ -190,6 +274,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 setStatus("Ab max bolke Max ko bulao")
             }
         }
+        root.addView(spacer())
         root.addView(wakeBtn)
 
         loadHistory()
@@ -205,10 +290,35 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun spacer(): View {
+        val v = View(this)
+        v.layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 14
+        )
+        return v
+    }
+
+    private fun styleButton(btn: Button, color: Int) {
+        val bg = GradientDrawable()
+        bg.cornerRadius = 34f
+        bg.setColor(color)
+        btn.background = bg
+        btn.setTextColor(Color.WHITE)
+        btn.isAllCaps = false
+        btn.setPadding(24, 22, 24, 22)
+    }
+
+    private fun refreshGenderButtons() {
+        if (!::maleBtn.isInitialized) return
+        val g = prefs().getString("voice_gender", "") ?: ""
+        styleButton(maleBtn, if (g == "male") accent else neutral)
+        styleButton(femaleBtn, if (g == "female") accent else neutral)
+    }
+
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale("hi", "IN")
-            selectMaleVoice()
+            applyVoicePreference()
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
@@ -225,24 +335,32 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun selectMaleVoice() {
+    private fun applyVoicePreference() {
         val engine = tts ?: return
+        val gender = prefs().getString("voice_gender", "male") ?: "male"
         try {
-            val voices = engine.voices ?: return
-            val male = voices.firstOrNull {
-                it.locale.language == "hi" &&
-                    it.name.lowercase().contains("male") &&
-                    !it.name.lowercase().contains("female")
-            } ?: voices.firstOrNull {
-                it.name.lowercase().contains("male") && !it.name.lowercase().contains("female")
-            }
-            if (male != null) {
-                engine.voice = male
+            val voices = engine.voices ?: emptySet()
+            if (gender == "female") {
+                val v = voices.firstOrNull {
+                    it.locale.language == "hi" && it.name.lowercase().contains("female")
+                } ?: voices.firstOrNull { it.name.lowercase().contains("female") }
+                if (v != null) engine.voice = v
+                engine.setPitch(1.0f)
+                engine.setSpeechRate(1.0f)
             } else {
-                engine.setPitch(0.82f)
+                val v = voices.firstOrNull {
+                    it.locale.language == "hi" &&
+                        it.name.lowercase().contains("male") &&
+                        !it.name.lowercase().contains("female")
+                } ?: voices.firstOrNull {
+                    it.name.lowercase().contains("male") && !it.name.lowercase().contains("female")
+                }
+                if (v != null) engine.voice = v
+                engine.setPitch(0.78f)
+                engine.setSpeechRate(0.93f)
             }
         } catch (e: Exception) {
-            engine.setPitch(0.82f)
+            engine.setPitch(if (gender == "female") 1.0f else 0.78f)
         }
     }
 
@@ -250,8 +368,32 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (::statusView.isInitialized) statusView.text = msg
     }
 
-    private fun appendChat(who: String, msg: String) {
-        chatView.append("$who: $msg\n\n")
+    private fun addBubble(text: String, isUser: Boolean) {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = if (isUser) Gravity.END else Gravity.START
+        row.layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+
+        val bubble = TextView(this)
+        bubble.text = text
+        bubble.setTextColor(Color.WHITE)
+        bubble.textSize = 15f
+        bubble.setPadding(26, 18, 26, 18)
+        bubble.maxWidth = (resources.displayMetrics.widthPixels * 0.72).toInt()
+        val bg = GradientDrawable()
+        bg.cornerRadius = 30f
+        bg.setColor(if (isUser) userBubble else maxBubble)
+        bubble.background = bg
+        val lp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        lp.setMargins(8, 6, 8, 6)
+        bubble.layoutParams = lp
+
+        row.addView(bubble)
+        chatContainer.addView(row)
         scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
@@ -262,8 +404,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             for (i in 0 until arr.length()) {
                 val m = arr.getJSONObject(i)
                 history.put(m)
-                val who = if (m.optString("role") == "user") "Tum" else "Max"
-                appendChat(who, m.optString("content"))
+                addBubble(m.optString("content"), m.optString("role") == "user")
             }
         } catch (e: Exception) {
         }
@@ -750,7 +891,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (wakeMode) finish()
             return
         }
-        appendChat("Tum", userText)
+        addBubble(userText, true)
         history.put(JSONObject().put("role", "user").put("content", userText))
         saveHistory()
         setStatus("Max soch raha hai...")
@@ -758,7 +899,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         thread {
             try {
                 val messages = JSONArray()
-                messages.put(JSONObject().put("role", "system").put("content", systemPrompt))
+                messages.put(JSONObject().put("role", "system").put("content", buildSystemPrompt()))
                 val start = maxOf(0, history.length() - 10)
                 for (i in start until history.length()) {
                     messages.put(history.get(i))
@@ -783,7 +924,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 runOnUiThread {
                     history.put(JSONObject().put("role", "assistant").put("content", reply))
                     saveHistory()
-                    appendChat("Max", reply)
+                    addBubble(reply, false)
                     setStatus("Max tayyar hai")
                     tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "max")
                 }
