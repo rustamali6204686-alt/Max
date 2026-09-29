@@ -1,6 +1,7 @@
 package com.max.assistant
 
 import android.Manifest
+import android.animation.ObjectAnimator
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
@@ -31,7 +32,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
-import android.widget.ImageView
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -48,7 +49,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private val model = "openai/gpt-oss-120b"
 
-    // Ultron red/dark theme colors
     private val bgDark = Color.parseColor("#0A0A0A")
     private val accent = Color.parseColor("#FF0000")
     private val neutral = Color.parseColor("#1A1A1A")
@@ -71,7 +71,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var keyInput: EditText
     private lateinit var nameInput: EditText
     private lateinit var settingsPanel: LinearLayout
-    private lateinit var headImage: ImageView
+    private lateinit var headContainer: FrameLayout
     private val history = JSONArray()
 
     private var wakeMode = false
@@ -92,6 +92,109 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             "Use the separate tools for torch, alarm, timer, opening apps, call, SMS and web search. " +
             "For any in-app action, use the control_screen tool and describe the full goal. " +
             "Answer all other questions directly and smartly."
+    }
+
+    // ============ ULTRON HEAD BUILDER ============
+    private fun buildUltronHead(): FrameLayout {
+        val container = FrameLayout(this)
+        val size = (resources.displayMetrics.widthPixels * 0.62).toInt()
+        container.layoutParams = LinearLayout.LayoutParams(size, size).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = 10
+            bottomMargin = 10
+        }
+
+        // Outer shell (dark circle with red ring)
+        val shell = View(this)
+        val shellBg = GradientDrawable()
+        shellBg.shape = GradientDrawable.OVAL
+        shellBg.gradientType = GradientDrawable.RADIAL_GRADIENT
+        shellBg.gradientRadius = size.toFloat()
+        shellBg.colors = intArrayOf(Color.parseColor("#2A0000"), Color.parseColor("#0A0A0A"))
+        shellBg.setStroke(6, Color.parseColor("#8B0000"))
+        shell.background = shellBg
+        val shellSize = (size * 0.9).toInt()
+        val shellLp = FrameLayout.LayoutParams(shellSize, shellSize)
+        shellLp.gravity = Gravity.CENTER
+        shell.layoutParams = shellLp
+        container.addView(shell)
+
+        // Inner face plate
+        val face = View(this)
+        val faceBg = GradientDrawable()
+        faceBg.shape = GradientDrawable.OVAL
+        faceBg.gradientType = GradientDrawable.RADIAL_GRADIENT
+        faceBg.gradientRadius = (size * 0.4f)
+        faceBg.colors = intArrayOf(Color.parseColor("#4A0000"), Color.parseColor("#120000"))
+        face.background = faceBg
+        val faceSize = (size * 0.72).toInt()
+        val faceLp = FrameLayout.LayoutParams(faceSize, faceSize)
+        faceLp.gravity = Gravity.CENTER
+        face.layoutParams = faceLp
+        container.addView(face)
+
+        // Eyes row
+        val eyesRow = LinearLayout(this)
+        eyesRow.orientation = LinearLayout.HORIZONTAL
+        val eyesLp = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        )
+        eyesLp.gravity = Gravity.CENTER
+        eyesLp.topMargin = -(size * 0.05).toInt()
+        eyesRow.layoutParams = eyesLp
+
+        val eyeW = (size * 0.13).toInt()
+        val eyeH = (size * 0.07).toInt()
+        val eyeGap = (size * 0.18).toInt()
+
+        val leftEye = View(this)
+        val eyeBg = GradientDrawable()
+        eyeBg.shape = GradientDrawable.OVAL
+        eyeBg.gradientType = GradientDrawable.RADIAL_GRADIENT
+        eyeBg.gradientRadius = eyeW.toFloat()
+        eyeBg.colors = intArrayOf(Color.parseColor("#FFAAAA"), Color.parseColor("#FF0000"))
+        leftEye.background = eyeBg
+        val lLp = LinearLayout.LayoutParams(eyeW, eyeH)
+        lLp.marginEnd = eyeGap
+        leftEye.layoutParams = lLp
+        eyesRow.addView(leftEye)
+
+        val rightEye = View(this)
+        val eyeBg2 = GradientDrawable()
+        eyeBg2.shape = GradientDrawable.OVAL
+        eyeBg2.gradientType = GradientDrawable.RADIAL_GRADIENT
+        eyeBg2.gradientRadius = eyeW.toFloat()
+        eyeBg2.colors = intArrayOf(Color.parseColor("#FFAAAA"), Color.parseColor("#FF0000"))
+        rightEye.background = eyeBg2
+        rightEye.layoutParams = LinearLayout.LayoutParams(eyeW, eyeH)
+        eyesRow.addView(rightEye)
+
+        container.addView(eyesRow)
+
+        // Mouth line
+        val mouth = View(this)
+        val mouthBg = GradientDrawable()
+        mouthBg.setColor(Color.parseColor("#8B0000"))
+        mouthBg.cornerRadius = 20f
+        mouth.background = mouthBg
+        val mouthLp = FrameLayout.LayoutParams(
+            (size * 0.32).toInt(),
+            (size * 0.025).toInt()
+        )
+        mouthLp.gravity = Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM
+        mouthLp.bottomMargin = (size * 0.2).toInt()
+        mouth.layoutParams = mouthLp
+        container.addView(mouth)
+
+        // Pulse animation (breathing effect)
+        val pulse = ObjectAnimator.ofFloat(container, "alpha", 0.75f, 1f)
+        pulse.duration = 1800
+        pulse.repeatCount = ObjectAnimator.INFINITE
+        pulse.repeatMode = ObjectAnimator.REVERSE
+        pulse.start()
+
+        return container
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -132,24 +235,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         topBar.addView(gearBtn)
         root.addView(topBar)
 
-        // Ultron head image - touch to rotate
-        headImage = ImageView(this)
-        try {
-            headImage.setImageResource(R.drawable.ultron_head)
-        } catch (e: Exception) {
-        }
-        val headSize = (resources.displayMetrics.widthPixels * 0.62).toInt()
-        val headLp = LinearLayout.LayoutParams(headSize, headSize)
-        headLp.gravity = Gravity.CENTER_HORIZONTAL
-        headLp.topMargin = 10
-        headLp.bottomMargin = 10
-        headImage.layoutParams = headLp
-        headImage.scaleType = ImageView.ScaleType.FIT_CENTER
+        // Ultron head
+        headContainer = buildUltronHead()
 
         var currentRotation = 0f
         var lastX = 0f
         var lastY = 0f
-        headImage.setOnTouchListener { _, event ->
+        headContainer.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     lastX = event.x
@@ -160,9 +252,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     val deltaX = event.x - lastX
                     val deltaY = event.y - lastY
                     currentRotation += deltaX * 0.7f
-                    headImage.rotation = currentRotation
+                    headContainer.rotation = currentRotation
                     val tilt = (deltaY * 0.3f).coerceIn(-15f, 15f)
-                    headImage.rotationY = tilt * 3f
+                    headContainer.rotationY = tilt * 3f
                     lastX = event.x
                     lastY = event.y
                     true
@@ -170,7 +262,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 else -> false
             }
         }
-        root.addView(headImage)
+        root.addView(headContainer)
 
         val savedKey = prefs().getString("key", "") ?: ""
         val savedName = prefs().getString("name", "") ?: ""
@@ -291,10 +383,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         setContentView(root)
 
-        // Intro fade-in animation
+        // Intro fade-in
         root.animate().alpha(1f).setDuration(900).start()
 
-        // Name onboarding if not set
+        // Onboarding for name
         if (savedName.isBlank()) {
             Handler(Looper.getMainLooper()).postDelayed({ showNameDialog() }, 1000)
         }
@@ -380,7 +472,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     !it.name.lowercase().contains("female")
             }
             if (maleVoice != null) engine.voice = maleVoice
-            // Ultron-style: deep pitch, slightly slow
             engine.setPitch(0.55f)
             engine.setSpeechRate(0.88f)
         } catch (e: Exception) {
