@@ -95,7 +95,6 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun speak(text: String) {
-        // Pause Vosk listening so it doesn't hear its own voice
         stopListening()
         main.removeCallbacksAndMessages(null)
 
@@ -111,7 +110,6 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             })
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "announce")
         } else {
-            // TTS not ready, just resume listening
             main.postDelayed({ beginListening() }, 1500)
         }
     }
