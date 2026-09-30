@@ -1,7 +1,6 @@
 package com.max.assistant
 
 import android.Manifest
-import android.animation.ObjectAnimator
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
@@ -49,12 +48,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private val model = "openai/gpt-oss-120b"
 
-    private val bgDark = Color.parseColor("#0A0A0A")
-    private val accent = Color.parseColor("#FF0000")
-    private val neutral = Color.parseColor("#1A1A1A")
-    private val userBubble = Color.parseColor("#8B0000")
-    private val maxBubble = Color.parseColor("#1F1F1F")
-    private val redGlow = Color.parseColor("#FF3333")
+    private val bgDark = Color.parseColor("#060A10")
+    private val accent = Color.parseColor("#00E5FF")
+    private val neutral = Color.parseColor("#0F1A22")
+    private val userBubble = Color.parseColor("#0088AA")
+    private val maxBubble = Color.parseColor("#0F1A22")
+    private val redGlow = Color.parseColor("#00E5FF")
 
     private val agentPrompt =
         "You are an autonomous phone-control agent. You receive: the user's goal, work done so far, " +
@@ -94,105 +93,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             "Answer all other questions directly and smartly."
     }
 
-    // ============ ULTRON HEAD BUILDER ============
+    // ============ HUD BUILDER ============
     private fun buildUltronHead(): FrameLayout {
         val container = FrameLayout(this)
-        val size = (resources.displayMetrics.widthPixels * 0.62).toInt()
+        val size = (resources.displayMetrics.widthPixels * 0.78).toInt()
         container.layoutParams = LinearLayout.LayoutParams(size, size).apply {
             gravity = Gravity.CENTER_HORIZONTAL
             topMargin = 10
             bottomMargin = 10
         }
 
-        // Outer shell (dark circle with red ring)
-        val shell = View(this)
-        val shellBg = GradientDrawable()
-        shellBg.shape = GradientDrawable.OVAL
-        shellBg.gradientType = GradientDrawable.RADIAL_GRADIENT
-        shellBg.gradientRadius = size.toFloat()
-        shellBg.colors = intArrayOf(Color.parseColor("#2A0000"), Color.parseColor("#0A0A0A"))
-        shellBg.setStroke(6, Color.parseColor("#8B0000"))
-        shell.background = shellBg
-        val shellSize = (size * 0.9).toInt()
-        val shellLp = FrameLayout.LayoutParams(shellSize, shellSize)
-        shellLp.gravity = Gravity.CENTER
-        shell.layoutParams = shellLp
-        container.addView(shell)
-
-        // Inner face plate
-        val face = View(this)
-        val faceBg = GradientDrawable()
-        faceBg.shape = GradientDrawable.OVAL
-        faceBg.gradientType = GradientDrawable.RADIAL_GRADIENT
-        faceBg.gradientRadius = (size * 0.4f)
-        faceBg.colors = intArrayOf(Color.parseColor("#4A0000"), Color.parseColor("#120000"))
-        face.background = faceBg
-        val faceSize = (size * 0.72).toInt()
-        val faceLp = FrameLayout.LayoutParams(faceSize, faceSize)
-        faceLp.gravity = Gravity.CENTER
-        face.layoutParams = faceLp
-        container.addView(face)
-
-        // Eyes row
-        val eyesRow = LinearLayout(this)
-        eyesRow.orientation = LinearLayout.HORIZONTAL
-        val eyesLp = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT
-        )
-        eyesLp.gravity = Gravity.CENTER
-        eyesLp.topMargin = -(size * 0.05).toInt()
-        eyesRow.layoutParams = eyesLp
-
-        val eyeW = (size * 0.13).toInt()
-        val eyeH = (size * 0.07).toInt()
-        val eyeGap = (size * 0.18).toInt()
-
-        val leftEye = View(this)
-        val eyeBg = GradientDrawable()
-        eyeBg.shape = GradientDrawable.OVAL
-        eyeBg.gradientType = GradientDrawable.RADIAL_GRADIENT
-        eyeBg.gradientRadius = eyeW.toFloat()
-        eyeBg.colors = intArrayOf(Color.parseColor("#FFAAAA"), Color.parseColor("#FF0000"))
-        leftEye.background = eyeBg
-        val lLp = LinearLayout.LayoutParams(eyeW, eyeH)
-        lLp.marginEnd = eyeGap
-        leftEye.layoutParams = lLp
-        eyesRow.addView(leftEye)
-
-        val rightEye = View(this)
-        val eyeBg2 = GradientDrawable()
-        eyeBg2.shape = GradientDrawable.OVAL
-        eyeBg2.gradientType = GradientDrawable.RADIAL_GRADIENT
-        eyeBg2.gradientRadius = eyeW.toFloat()
-        eyeBg2.colors = intArrayOf(Color.parseColor("#FFAAAA"), Color.parseColor("#FF0000"))
-        rightEye.background = eyeBg2
-        rightEye.layoutParams = LinearLayout.LayoutParams(eyeW, eyeH)
-        eyesRow.addView(rightEye)
-
-        container.addView(eyesRow)
-
-        // Mouth line
-        val mouth = View(this)
-        val mouthBg = GradientDrawable()
-        mouthBg.setColor(Color.parseColor("#8B0000"))
-        mouthBg.cornerRadius = 20f
-        mouth.background = mouthBg
-        val mouthLp = FrameLayout.LayoutParams(
-            (size * 0.32).toInt(),
-            (size * 0.025).toInt()
-        )
-        mouthLp.gravity = Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM
-        mouthLp.bottomMargin = (size * 0.2).toInt()
-        mouth.layoutParams = mouthLp
-        container.addView(mouth)
-
-        // Pulse animation (breathing effect)
-        val pulse = ObjectAnimator.ofFloat(container, "alpha", 0.75f, 1f)
-        pulse.duration = 1800
-        pulse.repeatCount = ObjectAnimator.INFINITE
-        pulse.repeatMode = ObjectAnimator.REVERSE
-        pulse.start()
+        val hud = UltronHudView(this)
+        val lp = FrameLayout.LayoutParams(size, size)
+        lp.gravity = Gravity.CENTER
+        hud.layoutParams = lp
+        container.addView(hud)
 
         return container
     }
@@ -211,7 +126,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.setPadding(36, 90, 36, 36)
         root.alpha = 0f
 
-        // Top bar
         val topBar = LinearLayout(this)
         topBar.orientation = LinearLayout.HORIZONTAL
         topBar.setPadding(0, 0, 0, 20)
@@ -235,7 +149,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         topBar.addView(gearBtn)
         root.addView(topBar)
 
-        // Ultron head
         headContainer = buildUltronHead()
 
         var currentRotation = 0f
@@ -383,10 +296,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         setContentView(root)
 
-        // Intro fade-in
         root.animate().alpha(1f).setDuration(900).start()
 
-        // Onboarding for name
         if (savedName.isBlank()) {
             Handler(Looper.getMainLooper()).postDelayed({ showNameDialog() }, 1000)
         }
@@ -593,8 +504,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ---------- tools ----------
-
     private fun schema(vararg fields: Pair<String, String>): JSONObject {
         val props = JSONObject()
         val req = JSONArray()
@@ -767,8 +676,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ---------- helpers ----------
-
     private fun onMain(block: () -> String): String {
         val latch = CountDownLatch(1)
         var result = ""
@@ -832,8 +739,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         return out
     }
-
-    // ---------- safety ----------
 
     private fun isBlockedPackage(pkg: String): Boolean {
         val p = pkg.lowercase()
@@ -913,8 +818,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
         }
     }
-
-    // ---------- screen agent ----------
 
     private fun runAgent(goal: String, key: String): String {
         val svc = MaxAccessibilityService.instance
@@ -999,8 +902,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             hideStop()
         }
     }
-
-    // ---------- main flow ----------
 
     private fun askMax(userText: String) {
         val key = prefs().getString("key", "") ?: ""
