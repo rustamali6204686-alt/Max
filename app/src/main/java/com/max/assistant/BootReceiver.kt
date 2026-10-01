@@ -1,5 +1,6 @@
 package com.max.assistant
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -20,11 +21,7 @@ class BootReceiver : BroadcastReceiver() {
         context: Context,
         intent: Intent
     ) {
-
-        if (
-            intent.action !=
-            Intent.ACTION_BOOT_COMPLETED
-        ) {
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED) {
             return
         }
 
@@ -46,12 +43,7 @@ class BootReceiver : BroadcastReceiver() {
     private fun showBootNotification(
         context: Context
     ) {
-
-        if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.TIRAMISU
-        ) {
-
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (
                 context.checkSelfPermission(
                     android.Manifest.permission.POST_NOTIFICATIONS
@@ -64,27 +56,18 @@ class BootReceiver : BroadcastReceiver() {
         val manager =
             context.getSystemService(
                 Context.NOTIFICATION_SERVICE
-            ) as? NotificationManager
-                ?: return
+            ) as? NotificationManager ?: return
 
-        if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.O
-        ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Max",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Max startup notification"
+            }
 
-            val channel =
-                NotificationChannel(
-                    CHANNEL_ID,
-                    "Max",
-                    NotificationManager.IMPORTANCE_LOW
-                ).apply {
-                    description =
-                        "Max startup notification"
-                }
-
-            manager.createNotificationChannel(
-                channel
-            )
+            manager.createNotificationChannel(channel)
         }
 
         val launchIntent =
@@ -92,10 +75,9 @@ class BootReceiver : BroadcastReceiver() {
                 context,
                 MainActivity::class.java
             ).apply {
-
                 flags =
                     Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
 
         val pendingIntent =
@@ -108,18 +90,12 @@ class BootReceiver : BroadcastReceiver() {
             )
 
         val notification =
-            if (
-                Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.O
-            ) {
-
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(
                     context,
                     CHANNEL_ID
                 )
-
             } else {
-
                 @Suppress("DEPRECATION")
                 Notification.Builder(context)
             }
@@ -130,19 +106,15 @@ class BootReceiver : BroadcastReceiver() {
                 .setContentText(
                     "Tap to start Max after reboot."
                 )
-                .setContentIntent(
-                    pendingIntent
-                )
+                .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
                 .build()
 
         try {
-
             manager.notify(
                 NOTIFICATION_ID,
                 notification
             )
-
         } catch (_: SecurityException) {
         } catch (_: Exception) {
         }
