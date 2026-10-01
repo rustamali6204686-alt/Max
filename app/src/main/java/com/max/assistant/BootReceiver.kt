@@ -1,3 +1,4 @@
+import android.app.Notification
 package com.max.assistant
 
 import android.app.Notification
