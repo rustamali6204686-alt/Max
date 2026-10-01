@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -39,18 +40,21 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
         private var instance: WakeService? = null
 
         fun start(ctx: Context) {
-            ctx.startForegroundService(Intent(ctx, WakeService::class.java))
+            try {
+                val i = Intent(ctx, WakeService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    ctx.startForegroundService(i)
+                } else {
+                    ctx.startService(i)
+                }
+            } catch (e: Exception) {
+            }
         }
 
         fun stop(ctx: Context) {
-            ctx.stopService(Intent(ctx, WakeService::class.java))
-        }
-
-        fun pause(ctx: Context) {
-            instance?.let { svc ->
-                svc.paused = true
-                svc.stopListening()
-                svc.note("Max paused")
+            try {
+                ctx.stopService(Intent(ctx, WakeService::class.java))
+            } catch (e: Exception) {
             }
         }
 
@@ -78,7 +82,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var stopped = false
-    private var paused = false
+    @Volatile private var paused = false
     private var lastWake = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -102,7 +106,6 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
         try {
             val voices = engine.voices ?: emptySet()
             val enVoices = voices.filter { it.locale.language == "en" }
-            // Prefer voice with "male" in the name
             val male = enVoices.firstOrNull {
                 it.name.lowercase().contains("male") &&
                     !it.name.lowercase().contains("female")
@@ -110,7 +113,6 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             if (male != null) {
                 engine.voice = male
             } else {
-                // Pick first non-female English voice
                 val notFemale = enVoices.firstOrNull {
                     !it.name.lowercase().contains("female")
                 }
@@ -118,7 +120,6 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             }
         } catch (e: Exception) {
         }
-        // Deep Ultron-style voice
         engine.setPitch(0.5f)
         engine.setSpeechRate(0.85f)
     }
@@ -171,16 +172,25 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
 
     private fun createChannel() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Max listening", NotificationManager.IMPORTANCE_LOW)
+        val ch = NotificationChannel(
+            CHANNEL,
+            "Max listening",
+            NotificationManager.IMPORTANCE_LOW
         )
+        nm.createNotificationChannel(ch)
     }
 
     private fun buildNote(text: String): Notification {
+        val pi = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         return Notification.Builder(this, CHANNEL)
             .setContentTitle("Max")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentIntent(pi)
             .setOngoing(true)
             .build()
     }
@@ -262,13 +272,12 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
         if (paused) return
         if (h == null || !h.contains("max")) return
         val now = System.currentTimeMillis()
-        if (now - lastWake < 4000) return
+        if (now - lastWake < 5000) return
         lastWake = now
         main.post { wake() }
     }
 
     private fun wake() {
-        // Pause listening until MainActivity tells us to resume
         paused = true
         stopListening()
         val i = Intent(this, MainActivity::class.java)
@@ -279,15 +288,16 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
         } catch (e: Exception) {
             note("Max couldn't start: " + e.message)
             paused = false
-            main.postDelayed({ beginListening() }, 1000)
+            main.postDelayed({ beginListening() }, 1500)
+            return
         }
-        // Safety: agar 60 sec tak MainActivity resume na bole, khud resume ho jao
+        // Safety: agar 20 sec tak MainActivity resume na bole, khud resume
         main.postDelayed({
             if (paused && !MainActivity.isActive) {
                 paused = false
                 beginListening()
             }
-        }, 60000)
+        }, 20000)
     }
 
     private fun stopListening() {
