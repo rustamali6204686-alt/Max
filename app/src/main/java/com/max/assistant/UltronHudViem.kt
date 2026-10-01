@@ -17,15 +17,20 @@ class UltronHudView @JvmOverloads constructor(
 ) : View(context, attrs, defStyle) {
 
     private val cyan = Color.parseColor("#00E5FF")
-    private val cyanBright = Color.parseColor("#5CF5FF")
+    private val brightCyan = Color.parseColor("#5CF5FF")
 
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         color = cyan
     }
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val orbPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
+        color = brightCyan
+    }
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#5000E5FF")
     }
     private val boltPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -66,42 +71,41 @@ class UltronHudView @JvmOverloads constructor(
         val cy = height / 2f
         val maxR = minOf(width, height) / 2f
 
-        // 1. OUTER GLOW (solid cyan with alpha)
-        fillPaint.color = Color.parseColor("#4000E5FF")
-        canvas.drawCircle(cx, cy, maxR * 0.98f, fillPaint)
+        // Big soft outer glow
+        canvas.drawCircle(cx, cy, maxR * 0.98f, glowPaint)
 
-        // 2. ROTATING RINGS
-        strokePaint.color = cyan
-
-        strokePaint.alpha = 170
-        strokePaint.strokeWidth = maxR * 0.012f
+        // Rings
+        ringPaint.color = cyan
+        ringPaint.alpha = 170
+        ringPaint.strokeWidth = maxR * 0.012f
         drawTicks(canvas, cx, cy, maxR * 0.94f, 40, rot1)
 
-        strokePaint.alpha = 220
-        strokePaint.strokeWidth = maxR * 0.014f
+        ringPaint.alpha = 220
+        ringPaint.strokeWidth = maxR * 0.014f
         drawDashedRing(canvas, cx, cy, maxR * 0.84f, 6f, 22, rot2)
 
-        strokePaint.alpha = 255
-        strokePaint.strokeWidth = maxR * 0.018f
+        ringPaint.alpha = 255
+        ringPaint.strokeWidth = maxR * 0.018f
         drawArcs(canvas, cx, cy, maxR * 0.72f, rot3)
 
-        strokePaint.alpha = 230
-        strokePaint.strokeWidth = maxR * 0.012f
+        ringPaint.alpha = 230
+        ringPaint.strokeWidth = maxR * 0.012f
         drawDashedRing(canvas, cx, cy, maxR * 0.60f, 4f, 30, -rot2)
 
-        strokePaint.alpha = 255
-        strokePaint.strokeWidth = maxR * 0.018f
-        canvas.drawCircle(cx, cy, maxR * 0.46f, strokePaint)
+        ringPaint.alpha = 255
+        ringPaint.strokeWidth = maxR * 0.018f
+        canvas.drawCircle(cx, cy, maxR * 0.46f, ringPaint)
 
-        // 3. CENTER SOLID BRIGHT ORB (koi gradient nahi — pure color)
-        val orbR = maxR * 0.40f
-        fillPaint.color = Color.parseColor("#6000E5FF") // soft glow behind
-        canvas.drawCircle(cx, cy, orbR * 1.4f, fillPaint)
+        // ===== CENTER ORB — SOLID, ALWAYS VISIBLE =====
+        val orbR = maxR * 0.38f
+        // Outer bright cyan halo
+        orbPaint.color = Color.parseColor("#8000E5FF")
+        canvas.drawCircle(cx, cy, orbR * 1.35f, orbPaint)
+        // Main solid cyan orb
+        orbPaint.color = brightCyan
+        canvas.drawCircle(cx, cy, orbR, orbPaint)
 
-        fillPaint.color = cyanBright   // SOLID BRIGHT CYAN
-        canvas.drawCircle(cx, cy, orbR, fillPaint)
-
-        // 4. BLACK LIGHTNING BOLT (solid, no gradient)
+        // ===== BLACK BOLT — SOLID =====
         drawBolt(canvas, cx, cy, orbR * 0.85f)
     }
 
@@ -112,7 +116,7 @@ class UltronHudView @JvmOverloads constructor(
             val y1 = cy + (r * 0.95f * Math.sin(a)).toFloat()
             val x2 = cx + (r * Math.cos(a)).toFloat()
             val y2 = cy + (r * Math.sin(a)).toFloat()
-            canvas.drawLine(x1, y1, x2, y2, strokePaint)
+            canvas.drawLine(x1, y1, x2, y2, ringPaint)
         }
     }
 
@@ -123,7 +127,7 @@ class UltronHudView @JvmOverloads constructor(
         val step = 360f / segs
         for (i in 0 until segs) {
             val start = i * step + rot
-            canvas.drawArc(cx - r, cy - r, cx + r, cy + r, start, dashDeg, false, strokePaint)
+            canvas.drawArc(cx - r, cy - r, cx + r, cy + r, start, dashDeg, false, ringPaint)
         }
     }
 
@@ -131,18 +135,18 @@ class UltronHudView @JvmOverloads constructor(
         val arcLen = 40f
         for (i in 0 until 5) {
             val start = i * (arcLen + 32f) + rot
-            canvas.drawArc(cx - r, cy - r, cx + r, cy + r, start, arcLen, false, strokePaint)
+            canvas.drawArc(cx - r, cy - r, cx + r, cy + r, start, arcLen, false, ringPaint)
         }
     }
 
     private fun drawBolt(canvas: Canvas, cx: Float, cy: Float, s: Float) {
         val p = Path()
-        p.moveTo(cx + s * 0.15f, cy - s * 1.0f)
-        p.lineTo(cx - s * 0.55f, cy + s * 0.10f)
-        p.lineTo(cx - s * 0.10f, cy + s * 0.10f)
+        p.moveTo(cx + s * 0.20f, cy - s * 1.0f)
+        p.lineTo(cx - s * 0.55f, cy + s * 0.15f)
+        p.lineTo(cx - s * 0.08f, cy + s * 0.15f)
         p.lineTo(cx - s * 0.20f, cy + s * 1.0f)
-        p.lineTo(cx + s * 0.55f, cy - s * 0.10f)
-        p.lineTo(cx + s * 0.10f, cy - s * 0.10f)
+        p.lineTo(cx + s * 0.55f, cy - s * 0.15f)
+        p.lineTo(cx + s * 0.08f, cy - s * 0.15f)
         p.close()
         canvas.drawPath(p, boltPaint)
     }
