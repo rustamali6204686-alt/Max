@@ -101,7 +101,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val size = (resources.displayMetrics.widthPixels * 0.85).toInt()
         container.layoutParams = LinearLayout.LayoutParams(size, size).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            topMargin = 40
+            topMargin = 20
         }
         val hud = UltronHudView(this)
         val lp = FrameLayout.LayoutParams(size, size)
@@ -128,9 +128,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.gravity = Gravity.CENTER_HORIZONTAL
 
         statusView = TextView(this)
-        statusView.text = ""
-        statusView.textSize = 14f
-        statusView.setTextColor(Color.parseColor("#6600E5FF"))
+        statusView.text = "Starting..."
+        statusView.textSize = 15f
+        statusView.setTextColor(Color.parseColor("#AA00E5FF"))
         statusView.gravity = Gravity.CENTER
         root.addView(
             statusView,
@@ -151,7 +151,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         settingsPanel = LinearLayout(this)
         settingsPanel.orientation = LinearLayout.VERTICAL
-        settingsPanel.setPadding(0, 40, 0, 20)
+        settingsPanel.setPadding(0, 30, 0, 20)
         settingsPanel.visibility = if (savedKey.isBlank()) View.VISIBLE else View.GONE
 
         val keyLabel = TextView(this)
@@ -169,28 +169,27 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         settingsPanel.addView(keyInput)
 
         val saveBtn = Button(this)
-        saveBtn.text = "Save"
+        saveBtn.text = "Save & Start"
         styleButton(saveBtn, accent)
         saveBtn.setOnClickListener {
             prefs().edit()
                 .putString("key", keyInput.text.toString().trim())
                 .apply()
-            setStatus("Saved, Master")
+            setStatus("Saved, starting...")
             settingsPanel.visibility = View.GONE
-            startWakeIfPossible()
+            ensureWakeService()
         }
         settingsPanel.addView(spacer())
         settingsPanel.addView(saveBtn)
 
         root.addView(settingsPanel)
 
-        // Long press on HUD = settings
+        // HUD long press = menu with options
         headContainer.setOnLongClickListener {
-            settingsPanel.visibility =
-                if (settingsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            showHudMenu()
             true
         }
-        // NOTE: No setOnClickListener. Only "Max" voice activates.
+        // NO onClick — only "Max" voice activates
 
         if (wakeMode) {
             root.visibility = View.GONE
@@ -200,8 +199,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         root.animate().alpha(1f).setDuration(900).start()
 
+        // ALWAYS start WakeService — no overlay check
         if (savedKey.isNotBlank()) {
-            startWakeIfPossible()
+            ensureWakeService()
+        } else {
+            setStatus("Paste Groq API key, Master")
         }
 
         if (wakeMode) {
@@ -209,25 +211,74 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun startWakeIfPossible() {
+    private fun showHudMenu() {
+        val options = arrayOf(
+            "Restart Wake Service",
+            "Change API Key",
+            "Test Voice"
+        )
+        AlertDialog.Builder(
+            ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        )
+            .setTitle("Max Control")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        WakeService.stop(this)
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            ensureWakeService()
+                        }, 1500)
+                    }
+                    1 -> {
+                        settingsPanel.visibility = View.VISIBLE
+                    }
+                    2 -> {
+                        tts?.speak("Max is online, Master.", TextToSpeech.QUEUE_FLUSH, null, "test")
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun ensureWakeService() {
+        // Mic permission check
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
             return
         }
-        if (!android.provider.Settings.canDrawOverlays(this)) {
-            setStatus("Allow overlay, then reopen app")
-            startActivity(
-                Intent(
-                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + packageName)
-                )
-            )
-            return
-        }
+
+        // Start WakeService — no overlay needed for foreground mic service
         if (!WakeService.running) {
-            WakeService.start(this)
+            try {
+                WakeService.start(this)
+                setStatus("Starting wake service...")
+                // Check after 3 sec if it actually started
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (WakeService.running) {
+                        setStatus("Say 'Max' anytime, Master")
+                    } else {
+                        setStatus("Wake failed. Long-press HUD to retry")
+                    }
+                }, 3000)
+            } catch (e: Exception) {
+                setStatus("Error: " + e.message)
+            }
+        } else {
+            setStatus("Say 'Max' anytime, Master")
         }
-        setStatus("Say 'Max' anytime, Master")
+
+        // Ensure overlay permission for STOP button (optional)
+        if (!android.provider.Settings.canDrawOverlays(this)) {
+            try {
+                startActivity(
+                    Intent(
+                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + packageName)
+                    )
+                )
+            } catch (e: Exception) {
+            }
+        }
     }
 
     private fun spacer(): View {
@@ -292,7 +343,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun setStatus(msg: String) {
-        if (::statusView.isInitialized) statusView.text = msg
+        if (::statusView.isInitialized) {
+            runOnUiThread { statusView.text = msg }
+        }
     }
 
     private fun addBubble(text: String, isUser: Boolean) {
@@ -371,7 +424,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
         if (requestCode == 1) {
             if (granted) {
-                startWakeIfPossible()
+                ensureWakeService()
             } else {
                 setStatus("Mic permission needed")
             }
