@@ -38,18 +38,14 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
         const val MODEL_URL =
             "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
 
+        private const val NOTIFICATION_ID = 1
+
         @Volatile
         var running = false
 
         @Volatile
         private var instance: WakeService? = null
 
-        /**
-         * Starts the microphone foreground service.
-         *
-         * This method is intentionally NOT called from BootReceiver.
-         * MainActivity calls it while the app is visible.
-         */
         fun start(context: Context) {
 
             if (
@@ -72,17 +68,13 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                 Build.VERSION.SDK_INT >=
                 Build.VERSION_CODES.O
             ) {
-                context.startForegroundService(
-                    intent
-                )
+                context.startForegroundService(intent)
             } else {
                 context.startService(intent)
             }
         }
 
-        fun stop(
-            context: Context
-        ) {
+        fun stop(context: Context) {
             try {
                 context.stopService(
                     Intent(
@@ -94,9 +86,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             }
         }
 
-        fun resume(
-            context: Context
-        ) {
+        fun resume(context: Context) {
             instance?.let { service ->
 
                 service.paused = false
@@ -127,7 +117,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
         ) {
             val short =
                 if (body.length > 120) {
-                    body.substring(0, 120) + "..."
+                    body.take(120) + "..."
                 } else {
                     body
                 }
@@ -140,6 +130,17 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
 
     private val main =
         Handler(Looper.getMainLooper())
+
+    private val restartListeningRunnable =
+        Runnable {
+            if (
+                !stopped &&
+                !paused &&
+                speech == null
+            ) {
+                beginListening()
+            }
+        }
 
     private var model: Model? = null
 
@@ -169,11 +170,11 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
     }
 
     override fun onCreate() {
-
         super.onCreate()
 
         instance = this
 
+        running = false
         stopped = false
         paused = false
         preparing = false
@@ -189,22 +190,21 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
     override fun onInit(
         status: Int
     ) {
-
         if (
-            status ==
-            TextToSpeech.SUCCESS
+            status != TextToSpeech.SUCCESS
         ) {
-
-            try {
-                tts?.language =
-                    Locale.US
-            } catch (_: Exception) {
-            }
-
-            applyMaleVoice()
-
-            ttsReady = true
+            ttsReady = false
+            return
         }
+
+        try {
+            tts?.language = Locale.US
+        } catch (_: Exception) {
+        }
+
+        applyMaleVoice()
+
+        ttsReady = true
     }
 
     private fun applyMaleVoice() {
@@ -213,42 +213,35 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             tts ?: return
 
         try {
-
             val voices =
-                engine.voices
-                    ?: emptySet()
+                engine.voices ?: emptySet()
 
-            val enVoices =
+            val englishVoices =
                 voices.filter {
                     it.locale.language == "en"
                 }
 
             val male =
-                enVoices.firstOrNull {
-                    it.name
-                        .lowercase()
-                        .contains("male") &&
-                        !it.name
-                            .lowercase()
-                            .contains("female")
+                englishVoices.firstOrNull {
+                    val name =
+                        it.name.lowercase()
+
+                    name.contains("male") &&
+                        !name.contains("female")
                 }
 
             if (male != null) {
-
                 engine.voice = male
-
             } else {
-
-                val notFemale =
-                    enVoices.firstOrNull {
+                val nonFemale =
+                    englishVoices.firstOrNull {
                         !it.name
                             .lowercase()
                             .contains("female")
                     }
 
-                if (notFemale != null) {
-                    engine.voice =
-                        notFemale
+                if (nonFemale != null) {
+                    engine.voice = nonFemale
                 }
             }
 
@@ -265,14 +258,15 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
     private fun speak(
         text: String
     ) {
-
         if (text.isBlank()) {
             return
         }
 
         stopListening()
 
-        main.removeCallbacksAndMessages(null)
+        main.removeCallbacks(
+            restartListeningRunnable
+        )
 
         if (
             ttsReady &&
@@ -290,17 +284,15 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                     override fun onDone(
                         utteranceId: String?
                     ) {
-
                         if (
                             !paused &&
                             !stopped
                         ) {
-
                             main.postDelayed(
                                 {
                                     beginListening()
                                 },
-                                500
+                                500L
                             )
                         }
                     }
@@ -308,29 +300,41 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                     override fun onError(
                         utteranceId: String?
                     ) {
-
                         if (
                             !paused &&
                             !stopped
                         ) {
-
                             main.postDelayed(
                                 {
                                     beginListening()
                                 },
-                                500
+                                500L
                             )
                         }
                     }
                 }
             )
 
-            tts?.speak(
-                text,
-                TextToSpeech.QUEUE_FLUSH,
-                null,
-                "announce"
-            )
+            try {
+                tts?.speak(
+                    text,
+                    TextToSpeech.QUEUE_FLUSH,
+                    null,
+                    "announce"
+                )
+            } catch (_: Exception) {
+                if (
+                    !paused &&
+                    !stopped
+                ) {
+                    main.postDelayed(
+                        {
+                            beginListening()
+                        },
+                        1000L
+                    )
+                }
+            }
 
         } else {
 
@@ -338,12 +342,11 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                 !paused &&
                 !stopped
             ) {
-
                 main.postDelayed(
                     {
                         beginListening()
                     },
-                    1200
+                    1200L
                 )
             }
         }
@@ -359,21 +362,13 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             return START_STICKY
         }
 
-        /*
-         * Check permission BEFORE startForeground().
-         *
-         * On modern Android the microphone FGS has strict runtime
-         * permission requirements.
-         */
         if (
             checkSelfPermission(
                 Manifest.permission.RECORD_AUDIO
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-
-            note(
-                "Microphone permission needed"
-            )
+            stopped = true
+            running = false
 
             stopSelf()
 
@@ -385,7 +380,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
         try {
 
             val notification =
-                buildNote(
+                buildNotification(
                     "Max is listening, say 'max'"
                 )
 
@@ -395,27 +390,24 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             ) {
 
                 startForeground(
-                    1,
+                    NOTIFICATION_ID,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                 )
 
             } else {
 
+                @Suppress("DEPRECATION")
                 startForeground(
-                    1,
+                    NOTIFICATION_ID,
                     notification
                 )
             }
 
-        } catch (e: Exception) {
+        } catch (_: Exception) {
 
             running = false
-
-            note(
-                "Wake service failed: " +
-                    (e.message ?: "unknown error")
-            )
+            stopped = true
 
             stopSelf()
 
@@ -461,15 +453,14 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             ).apply {
                 description =
                     "Max voice assistant listening service"
+
                 setShowBadge(false)
             }
 
-        manager.createNotificationChannel(
-            channel
-        )
+        manager.createNotificationChannel(channel)
     }
 
-    private fun buildNote(
+    private fun buildNotification(
         text: String
     ): Notification {
 
@@ -506,9 +497,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                 .setSmallIcon(
                     android.R.drawable.ic_btn_speak_now
                 )
-                .setContentIntent(
-                    pendingIntent
-                )
+                .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .build()
@@ -522,9 +511,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                 .setSmallIcon(
                     android.R.drawable.ic_btn_speak_now
                 )
-                .setContentIntent(
-                    pendingIntent
-                )
+                .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .build()
@@ -534,7 +521,6 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
     private fun note(
         text: String
     ) {
-
         try {
 
             val manager =
@@ -543,10 +529,11 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                 ) as NotificationManager
 
             manager.notify(
-                1,
-                buildNote(text)
+                NOTIFICATION_ID,
+                buildNotification(text)
             )
 
+        } catch (_: SecurityException) {
         } catch (_: Exception) {
         }
     }
@@ -576,6 +563,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             }
 
             if (stopped) {
+                preparing = false
                 return
             }
 
@@ -592,7 +580,8 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
 
                 if (
                     !stopped &&
-                    !paused
+                    !paused &&
+                    running
                 ) {
                     beginListening()
                 }
@@ -602,10 +591,12 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
 
             model = null
 
-            dir.deleteRecursively()
+            try {
+                dir.deleteRecursively()
+            } catch (_: Exception) {
+            }
 
             preparing = false
-
             running = false
 
             note(
@@ -619,7 +610,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                         stopSelf()
                     }
                 },
-                500
+                500L
             )
         }
     }
@@ -644,18 +635,13 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             connection.readTimeout =
                 60000
 
-            connection.getInputStream()
-                .use { input ->
+            connection.getInputStream().use { input ->
 
-                    zipFile
-                        .outputStream()
-                        .use { output ->
+                zipFile.outputStream().use { output ->
 
-                            input.copyTo(
-                                output
-                            )
-                        }
+                    input.copyTo(output)
                 }
+            }
 
             val base =
                 filesDir
@@ -688,9 +674,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                             .path
 
                     if (
-                        !canonical.startsWith(
-                            base
-                        )
+                        !canonical.startsWith(base)
                     ) {
                         throw SecurityException(
                             "Invalid model archive path"
@@ -699,21 +683,30 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
 
                     if (entry.isDirectory) {
 
-                        target.mkdirs()
+                        if (!target.mkdirs() &&
+                            !target.isDirectory
+                        ) {
+                            throw IllegalStateException(
+                                "Could not create model directory"
+                            )
+                        }
 
                     } else {
 
-                        target.parentFile
-                            ?.mkdirs()
-
-                        target
-                            .outputStream()
-                            .use { output ->
-
-                                zip.copyTo(
-                                    output
+                        target.parentFile?.let { parent ->
+                            if (
+                                !parent.exists() &&
+                                !parent.mkdirs()
+                            ) {
+                                throw IllegalStateException(
+                                    "Could not create model directory"
                                 )
                             }
+                        }
+
+                        target.outputStream().use { output ->
+                            zip.copyTo(output)
+                        }
                     }
 
                     zip.closeEntry()
@@ -746,7 +739,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             return
         }
 
-        val m =
+        val currentModel =
             model ?: return
 
         if (
@@ -754,13 +747,8 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                 Manifest.permission.RECORD_AUDIO
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-
-            note(
-                "Microphone permission needed"
-            )
-
+            running = false
             stopSelf()
-
             return
         }
 
@@ -768,7 +756,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
 
             val recognizer =
                 Recognizer(
-                    m,
+                    currentModel,
                     16000.0f,
                     "[\"max\", \"[unk]\"]"
                 )
@@ -778,6 +766,8 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                     recognizer,
                     16000.0f
                 )
+
+            speech = service
 
             service.startListening(
                 object : RecognitionListener {
@@ -802,37 +792,54 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                     override fun onError(
                         exception: Exception?
                     ) {
+                        main.post {
+                            if (
+                                speech === service
+                            ) {
+                                speech = null
+                            }
 
-                        speech = null
+                            try {
+                                service.shutdown()
+                            } catch (_: Exception) {
+                            }
 
-                        if (
-                            !stopped &&
-                            !paused
-                        ) {
-
-                            scheduleListeningRestart(
-                                exception
-                            )
+                            if (
+                                !stopped &&
+                                !paused &&
+                                running
+                            ) {
+                                scheduleListeningRestart()
+                            }
                         }
                     }
 
                     override fun onTimeout() {
 
-                        speech = null
+                        main.post {
 
-                        if (
-                            !stopped &&
-                            !paused
-                        ) {
-                            scheduleListeningRestart(
-                                null
-                            )
+                            if (
+                                speech === service
+                            ) {
+                                speech = null
+                            }
+
+                            try {
+                                service.shutdown()
+                            } catch (_: Exception) {
+                            }
+
+                            if (
+                                !stopped &&
+                                !paused &&
+                                running
+                            ) {
+                                scheduleListeningRestart()
+                            }
                         }
                     }
                 }
             )
-
-            speech = service
 
             restartAttempts = 0
 
@@ -840,21 +847,20 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                 "Max is listening, say 'max'"
             )
 
-        } catch (e: Exception) {
+        } catch (_: Exception) {
 
             speech = null
 
-            scheduleListeningRestart(e)
+            scheduleListeningRestart()
         }
     }
 
-    private fun scheduleListeningRestart(
-        error: Exception?
-    ) {
+    private fun scheduleListeningRestart() {
 
         if (
             stopped ||
-            paused
+            paused ||
+            !running
         ) {
             return
         }
@@ -874,27 +880,17 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             }
 
         if (restartAttempts == 1) {
-
             note(
                 "Voice listener restarting..."
             )
         }
 
-        main.removeCallbacksAndMessages(
-            LISTEN_RESTART_TOKEN
+        main.removeCallbacks(
+            restartListeningRunnable
         )
 
         main.postDelayed(
-            {
-                if (
-                    !stopped &&
-                    !paused &&
-                    speech == null
-                ) {
-                    beginListening()
-                }
-            },
-            LISTEN_RESTART_TOKEN,
+            restartListeningRunnable,
             delay
         )
     }
@@ -903,13 +899,15 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
         hypothesis: String?
     ) {
 
-        if (paused || stopped) {
+        if (
+            paused ||
+            stopped ||
+            !running
+        ) {
             return
         }
 
-        if (
-            hypothesis.isNullOrBlank()
-        ) {
+        if (hypothesis.isNullOrBlank()) {
             return
         }
 
@@ -941,7 +939,8 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
 
         if (
             stopped ||
-            paused
+            paused ||
+            !running
         ) {
             return
         }
@@ -955,10 +954,12 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                 this,
                 MainActivity::class.java
             ).apply {
+
                 putExtra(
                     "wake",
                     true
                 )
+
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP or
@@ -970,12 +971,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
 
             startActivity(intent)
 
-        } catch (e: Exception) {
-
-            note(
-                "Max couldn't start: " +
-                    (e.message ?: "unknown error")
-            )
+        } catch (_: Exception) {
 
             paused = false
 
@@ -983,15 +979,15 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                 {
                     beginListening()
                 },
-                1500
+                1500L
             )
 
             return
         }
 
         /*
-         * Safety:
-         * If MainActivity doesn't become active within 20 seconds,
+         * Safety fallback:
+         * if MainActivity does not become active,
          * resume wake-word listening.
          */
         main.postDelayed(
@@ -1001,9 +997,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
                     !MainActivity.isActive &&
                     !stopped
                 ) {
-
                     paused = false
-
                     beginListening()
                 }
             },
@@ -1013,17 +1007,23 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
 
     private fun stopListening() {
 
-        try {
-            speech?.stop()
-        } catch (_: Exception) {
-        }
-
-        try {
-            speech?.shutdown()
-        } catch (_: Exception) {
-        }
+        val currentSpeech =
+            speech
 
         speech = null
+
+        if (currentSpeech != null) {
+
+            try {
+                currentSpeech.stop()
+            } catch (_: Exception) {
+            }
+
+            try {
+                currentSpeech.shutdown()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -1031,12 +1031,18 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
         stopped = true
         running = false
         preparing = false
+        paused = true
 
-        main.removeCallbacksAndMessages(
-            null
+        main.removeCallbacks(
+            restartListeningRunnable
         )
 
         stopListening()
+
+        try {
+            tts?.stop()
+        } catch (_: Exception) {
+        }
 
         try {
             tts?.shutdown()
@@ -1056,10 +1062,5 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
         instance = null
 
         super.onDestroy()
-    }
-
-    companion object {
-        private val LISTEN_RESTART_TOKEN =
-            Any()
     }
 }
