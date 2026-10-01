@@ -46,6 +46,22 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             ctx.stopService(Intent(ctx, WakeService::class.java))
         }
 
+        fun pause(ctx: Context) {
+            instance?.let { svc ->
+                svc.paused = true
+                svc.stopListening()
+                svc.note("Max paused")
+            }
+        }
+
+        fun resume(ctx: Context) {
+            instance?.let { svc ->
+                svc.paused = false
+                svc.beginListening()
+                svc.note("Max is listening, say 'max'")
+            }
+        }
+
         fun announceCall(ctx: Context, number: String) {
             instance?.speak("Master, incoming call from $number. Should I receive it?")
         }
@@ -62,6 +78,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var stopped = false
+    private var paused = false
     private var lastWake = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -75,23 +92,35 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale.US
-            try {
-                val voices = tts?.voices ?: emptySet()
-                val maleVoice = voices.firstOrNull {
-                    it.locale.language == "en" &&
-                        it.name.lowercase().contains("male") &&
-                        !it.name.lowercase().contains("female")
-                } ?: voices.firstOrNull {
-                    it.locale.language == "en" &&
-                        !it.name.lowercase().contains("female")
-                }
-                if (maleVoice != null) tts?.voice = maleVoice
-            } catch (e: Exception) {
-            }
-            tts?.setPitch(0.55f)
-            tts?.setSpeechRate(0.88f)
+            applyMaleVoice()
             ttsReady = true
         }
+    }
+
+    private fun applyMaleVoice() {
+        val engine = tts ?: return
+        try {
+            val voices = engine.voices ?: emptySet()
+            val enVoices = voices.filter { it.locale.language == "en" }
+            // Prefer voice with "male" in the name
+            val male = enVoices.firstOrNull {
+                it.name.lowercase().contains("male") &&
+                    !it.name.lowercase().contains("female")
+            }
+            if (male != null) {
+                engine.voice = male
+            } else {
+                // Pick first non-female English voice
+                val notFemale = enVoices.firstOrNull {
+                    !it.name.lowercase().contains("female")
+                }
+                if (notFemale != null) engine.voice = notFemale
+            }
+        } catch (e: Exception) {
+        }
+        // Deep Ultron-style voice
+        engine.setPitch(0.5f)
+        engine.setSpeechRate(0.85f)
     }
 
     private fun speak(text: String) {
@@ -102,15 +131,15 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
-                    main.postDelayed({ beginListening() }, 700)
+                    if (!paused) main.postDelayed({ beginListening() }, 500)
                 }
                 override fun onError(utteranceId: String?) {
-                    main.postDelayed({ beginListening() }, 700)
+                    if (!paused) main.postDelayed({ beginListening() }, 500)
                 }
             })
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "announce")
         } else {
-            main.postDelayed({ beginListening() }, 1500)
+            if (!paused) main.postDelayed({ beginListening() }, 1200)
         }
     }
 
@@ -135,6 +164,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
         }
         running = true
         stopped = false
+        paused = false
         thread { prepareModelAndListen() }
         return START_STICKY
     }
@@ -156,8 +186,11 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun note(text: String) {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(1, buildNote(text))
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(1, buildNote(text))
+        } catch (e: Exception) {
+        }
     }
 
     private fun prepareModelAndListen() {
@@ -202,7 +235,7 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun beginListening() {
-        if (stopped) return
+        if (stopped || paused) return
         val m = model ?: return
         if (speech != null) return
         try {
@@ -226,14 +259,17 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun heard(h: String?) {
+        if (paused) return
         if (h == null || !h.contains("max")) return
         val now = System.currentTimeMillis()
-        if (now - lastWake < 20000) return
+        if (now - lastWake < 4000) return
         lastWake = now
         main.post { wake() }
     }
 
     private fun wake() {
+        // Pause listening until MainActivity tells us to resume
+        paused = true
         stopListening()
         val i = Intent(this, MainActivity::class.java)
         i.putExtra("wake", true)
@@ -242,8 +278,16 @@ class WakeService : Service(), TextToSpeech.OnInitListener {
             startActivity(i)
         } catch (e: Exception) {
             note("Max couldn't start: " + e.message)
+            paused = false
+            main.postDelayed({ beginListening() }, 1000)
         }
-        main.postDelayed({ beginListening() }, 20000)
+        // Safety: agar 60 sec tak MainActivity resume na bole, khud resume ho jao
+        main.postDelayed({
+            if (paused && !MainActivity.isActive) {
+                paused = false
+                beginListening()
+            }
+        }, 60000)
     }
 
     private fun stopListening() {
