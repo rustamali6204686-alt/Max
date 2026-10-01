@@ -25,7 +25,6 @@ import android.speech.tts.UtteranceProgressListener
 import android.text.InputType
 import android.view.ContextThemeWrapper
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -65,10 +64,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var recognizer: SpeechRecognizer? = null
     private lateinit var statusView: TextView
-    private lateinit var chatContainer: LinearLayout
-    private lateinit var scroll: ScrollView
+    private lateinit var chatContainer: LinearLayout   // invisible, sirf code ke liye
+    private lateinit var scroll: ScrollView            // invisible
     private lateinit var keyInput: EditText
-    private lateinit var nameInput: EditText
     private lateinit var settingsPanel: LinearLayout
     private lateinit var headContainer: FrameLayout
     private val history = JSONArray()
@@ -80,11 +78,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun prefs() = getSharedPreferences("max", Context.MODE_PRIVATE)
 
     private fun buildSystemPrompt(): String {
-        val name = prefs().getString("name", "")?.trim().orEmpty()
-        val nameLine = if (name.isNotEmpty())
-            "The user's name is $name, but ALWAYS address them as 'Master'. " else ""
         return "Your name is Max. You are an advanced AI assistant inspired by Ultron. " +
-            nameLine +
             "ALWAYS address the user as 'Master'. ALWAYS reply in English only. " +
             "Keep replies short - 1 to 3 sentences. Be intelligent, efficient, and slightly sarcastic. " +
             "Never use emojis or formatting symbols. " +
@@ -93,22 +87,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             "Answer all other questions directly and smartly."
     }
 
-    // ============ HUD BUILDER ============
     private fun buildUltronHead(): FrameLayout {
         val container = FrameLayout(this)
-        val size = (resources.displayMetrics.widthPixels * 0.78).toInt()
+        val size = (resources.displayMetrics.widthPixels * 0.85).toInt()
         container.layoutParams = LinearLayout.LayoutParams(size, size).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            topMargin = 10
-            bottomMargin = 10
+            topMargin = 40
         }
-
         val hud = UltronHudView(this)
         val lp = FrameLayout.LayoutParams(size, size)
         lp.gravity = Gravity.CENTER
         hud.layoutParams = lp
         container.addView(hud)
-
         return container
     }
 
@@ -125,85 +115,44 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.setBackgroundColor(bgDark)
         root.setPadding(36, 90, 36, 36)
         root.alpha = 0f
+        root.gravity = Gravity.CENTER_HORIZONTAL
 
-        val topBar = LinearLayout(this)
-        topBar.orientation = LinearLayout.HORIZONTAL
-        topBar.setPadding(0, 0, 0, 20)
-
+        // Status text (bahut chhota)
         statusView = TextView(this)
-        statusView.text = "Max is ready, Master"
-        statusView.textSize = 19f
-        statusView.setTextColor(redGlow)
-        topBar.addView(
+        statusView.text = ""
+        statusView.textSize = 14f
+        statusView.setTextColor(Color.parseColor("#6600E5FF"))
+        statusView.gravity = Gravity.CENTER
+        root.addView(
             statusView,
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
         )
 
-        val gearBtn = Button(this)
-        gearBtn.text = "⚙"
-        styleButton(gearBtn, neutral)
-        gearBtn.setOnClickListener {
-            settingsPanel.visibility =
-                if (settingsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-        }
-        topBar.addView(gearBtn)
-        root.addView(topBar)
-
+        // HUD center mein
         headContainer = buildUltronHead()
-
-        var currentRotation = 0f
-        var lastX = 0f
-        var lastY = 0f
-        headContainer.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    lastX = event.x
-                    lastY = event.y
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val deltaX = event.x - lastX
-                    val deltaY = event.y - lastY
-                    currentRotation += deltaX * 0.7f
-                    headContainer.rotation = currentRotation
-                    val tilt = (deltaY * 0.3f).coerceIn(-15f, 15f)
-                    headContainer.rotationY = tilt * 3f
-                    lastX = event.x
-                    lastY = event.y
-                    true
-                }
-                else -> false
-            }
-        }
         root.addView(headContainer)
 
+        // Chat container aur scroll — sirf code compatibility ke liye, screen par nahi
+        scroll = ScrollView(this)
+        chatContainer = LinearLayout(this)
+        scroll.addView(chatContainer)
+        // (root mein add NAHI karenge)
+
+        // Settings panel — sirf API key ke liye, default hidden
         val savedKey = prefs().getString("key", "") ?: ""
-        val savedName = prefs().getString("name", "") ?: ""
 
         settingsPanel = LinearLayout(this)
         settingsPanel.orientation = LinearLayout.VERTICAL
-        settingsPanel.setPadding(0, 10, 0, 20)
-        settingsPanel.visibility =
-            if (savedKey.isBlank() || savedName.isBlank()) View.VISIBLE else View.GONE
-
-        val nameLabel = TextView(this)
-        nameLabel.text = "Your name"
-        nameLabel.setTextColor(Color.LTGRAY)
-        nameLabel.textSize = 13f
-        settingsPanel.addView(nameLabel)
-
-        nameInput = EditText(this)
-        nameInput.hint = "e.g. Rahul"
-        nameInput.setTextColor(Color.WHITE)
-        nameInput.setHintTextColor(Color.GRAY)
-        nameInput.setText(savedName)
-        settingsPanel.addView(nameInput)
+        settingsPanel.setPadding(0, 40, 0, 20)
+        settingsPanel.visibility = if (savedKey.isBlank()) View.VISIBLE else View.GONE
 
         val keyLabel = TextView(this)
         keyLabel.text = "Groq API key"
         keyLabel.setTextColor(Color.LTGRAY)
         keyLabel.textSize = 13f
-        keyLabel.setPadding(0, 20, 0, 6)
         settingsPanel.addView(keyLabel)
 
         keyInput = EditText(this)
@@ -220,75 +169,27 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         saveBtn.setOnClickListener {
             prefs().edit()
                 .putString("key", keyInput.text.toString().trim())
-                .putString("name", nameInput.text.toString().trim())
                 .apply()
-            setStatus("Settings saved, Master")
+            setStatus("Saved, Master")
             settingsPanel.visibility = View.GONE
+            startWakeIfPossible()
         }
         settingsPanel.addView(spacer())
         settingsPanel.addView(saveBtn)
 
-        val clearBtn = Button(this)
-        clearBtn.text = "Forget old chats"
-        styleButton(clearBtn, neutral)
-        clearBtn.setOnClickListener {
-            while (history.length() > 0) history.remove(0)
-            prefs().edit().remove("history").apply()
-            chatContainer.removeAllViews()
-            setStatus("Fresh chat started")
-        }
-        settingsPanel.addView(spacer())
-        settingsPanel.addView(clearBtn)
-
         root.addView(settingsPanel)
 
-        scroll = ScrollView(this)
-        chatContainer = LinearLayout(this)
-        chatContainer.orientation = LinearLayout.VERTICAL
-        scroll.addView(chatContainer)
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
-        )
-
-        val micBtn = Button(this)
-        micBtn.text = "🎤  Speak to Max"
-        micBtn.textSize = 18f
-        styleButton(micBtn, accent)
-        micBtn.setOnClickListener { startListening() }
-        root.addView(spacer())
-        root.addView(
-            micBtn,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        )
-
-        val wakeBtn = Button(this)
-        wakeBtn.text = "Always listening: on / off"
-        styleButton(wakeBtn, neutral)
-        wakeBtn.setOnClickListener {
-            if (WakeService.running) {
-                WakeService.stop(this)
-                setStatus("Always listening off")
-            } else if (!android.provider.Settings.canDrawOverlays(this)) {
-                setStatus("Allow display over other apps, then tap again")
-                startActivity(
-                    Intent(
-                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:" + packageName)
-                    )
-                )
-            } else {
-                WakeService.start(this)
-                setStatus("Say 'max' to wake me, Master")
-            }
+        // HUD par long press = settings kholo (secret)
+        headContainer.setOnLongClickListener {
+            settingsPanel.visibility =
+                if (settingsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            true
         }
-        root.addView(spacer())
-        root.addView(wakeBtn)
 
-        loadHistory()
+        // HUD par tap = sunna shuru
+        headContainer.setOnClickListener {
+            startListening()
+        }
 
         if (wakeMode) {
             root.visibility = View.GONE
@@ -298,8 +199,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         root.animate().alpha(1f).setDuration(900).start()
 
-        if (savedName.isBlank()) {
-            Handler(Looper.getMainLooper()).postDelayed({ showNameDialog() }, 1000)
+        // Auto-start WakeService if API key + permissions ready
+        if (savedKey.isNotBlank()) {
+            startWakeIfPossible()
         }
 
         if (wakeMode) {
@@ -307,29 +209,27 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun showNameDialog() {
-        val input = EditText(this)
-        input.hint = "Enter your name, Master"
-        input.setTextColor(Color.WHITE)
-        input.setHintTextColor(Color.GRAY)
-        val d = AlertDialog.Builder(
-            ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-        )
-            .setTitle("Welcome to Max")
-            .setMessage("What should I call you?")
-            .setView(input)
-            .setCancelable(false)
-            .setPositiveButton("Save") { _, _ ->
-                val n = input.text.toString().trim()
-                if (n.isNotEmpty()) {
-                    prefs().edit().putString("name", n).apply()
-                    nameInput.setText(n)
-                    setStatus("Hello $n, I am Max")
-                    tts?.speak("Welcome $n. I am Max, ready to serve you.", TextToSpeech.QUEUE_FLUSH, null, "max")
-                }
-            }
-            .create()
-        d.show()
+    private fun startWakeIfPossible() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+            return
+        }
+        if (!android.provider.Settings.canDrawOverlays(this)) {
+            setStatus("Allow overlay, then reopen app")
+            startActivity(
+                Intent(
+                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + packageName)
+                )
+            )
+            return
+        }
+        if (!WakeService.running) {
+            WakeService.start(this)
+            setStatus("Say 'Max' anytime, Master")
+        } else {
+            setStatus("Say 'Max' anytime, Master")
+        }
     }
 
     private fun spacer(): View {
@@ -396,35 +296,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun addBubble(text: String, isUser: Boolean) {
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        row.gravity = if (isUser) Gravity.END else Gravity.START
-        row.layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-
+        // Chat hidden hai, sirf log
         val bubble = TextView(this)
         bubble.text = text
-        bubble.setTextColor(Color.WHITE)
-        bubble.textSize = 15f
-        bubble.setPadding(26, 18, 26, 18)
-        bubble.maxWidth = (resources.displayMetrics.widthPixels * 0.72).toInt()
-        val bg = GradientDrawable()
-        bg.cornerRadius = 30f
-        bg.setColor(if (isUser) userBubble else maxBubble)
-        if (!isUser) {
-            bg.setStroke(2, accent)
-        }
-        bubble.background = bg
-        val lp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        lp.setMargins(8, 6, 8, 6)
-        bubble.layoutParams = lp
-
-        row.addView(bubble)
-        chatContainer.addView(row)
-        scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+        chatContainer.addView(bubble)
     }
 
     private fun loadHistory() {
@@ -432,9 +307,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         try {
             val arr = JSONArray(raw)
             for (i in 0 until arr.length()) {
-                val m = arr.getJSONObject(i)
-                history.put(m)
-                addBubble(m.optString("content"), m.optString("role") == "user")
+                history.put(arr.getJSONObject(i))
             }
         } catch (e: Exception) {
         }
@@ -464,7 +337,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onError(error: Int) {
-                setStatus("Didn't catch that, try again")
+                setStatus("Didn't catch that")
                 if (wakeMode) finish()
             }
             override fun onPartialResults(partialResults: Bundle?) {}
@@ -474,7 +347,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()
                 if (text.isNullOrBlank()) {
-                    setStatus("Didn't catch that, try again")
+                    setStatus("Didn't catch that")
                     if (wakeMode) finish()
                 } else {
                     askMax(text)
@@ -498,9 +371,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
         if (requestCode == 1) {
-            if (granted) startListening() else setStatus("Mic permission needed")
-        } else {
-            if (granted) setStatus("Permission granted, speak again") else setStatus("Contacts permission needed")
+            if (granted) {
+                startWakeIfPossible()
+            } else {
+                setStatus("Mic permission needed")
+            }
         }
     }
 
@@ -528,6 +403,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         t.put(tool("web_search", "Search the internet and open browser", schema("query" to "search text")))
         t.put(tool("call", "Call someone. Contact name as saved, or a number", schema("who" to "contact name or phone number")))
         t.put(tool("send_sms", "Compose SMS. User sends it themselves", schema("who" to "contact name or phone number", "message" to "message text")))
+        t.put(tool("lock_phone", "Lock the phone screen immediately", schema("dummy" to "leave empty")))
         t.put(tool("control_screen", "Do any in-app action (tap, type, scroll), like sending WhatsApp msg, YouTube search, changing settings. Use dedicated tools for simple actions", schema("goal" to "full goal in 1-2 sentences")))
         return t
     }
@@ -615,21 +491,66 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     val target = args.optString("name").lowercase().trim()
                     if (target.isEmpty()) return "Which app, Master?"
                     val pm = packageManager
-                    val launcher = Intent(Intent.ACTION_MAIN)
-                    launcher.addCategory(Intent.CATEGORY_LAUNCHER)
-                    val apps = pm.queryIntentActivities(launcher, 0)
+
+                    val known = mapOf(
+                        "youtube" to "com.google.android.youtube",
+                        "whatsapp" to "com.whatsapp",
+                        "instagram" to "com.instagram.android",
+                        "facebook" to "com.facebook.katana",
+                        "chrome" to "com.android.chrome",
+                        "camera" to "com.android.camera",
+                        "gallery" to "com.google.android.apps.photos",
+                        "photos" to "com.google.android.apps.photos",
+                        "gmail" to "com.google.android.gm",
+                        "maps" to "com.google.android.apps.maps",
+                        "play store" to "com.android.vending",
+                        "playstore" to "com.android.vending",
+                        "settings" to "com.android.settings",
+                        "calculator" to "com.google.android.calculator",
+                        "clock" to "com.google.android.deskclock",
+                        "calendar" to "com.google.android.calendar",
+                        "spotify" to "com.spotify.music",
+                        "telegram" to "org.telegram.messenger",
+                        "snapchat" to "com.snapchat.android",
+                        "twitter" to "com.twitter.android",
+                        "x" to "com.twitter.android",
+                        "netflix" to "com.netflix.mediaclient",
+                        "amazon" to "in.amazon.mShop.android.shopping",
+                        "truecaller" to "com.truecaller",
+                        "messenger" to "com.facebook.orca"
+                    )
+
                     var pkg: String? = null
-                    for (a in apps) {
-                        if (a.loadLabel(pm).toString().lowercase().contains(target)) {
-                            pkg = a.activityInfo.packageName
-                            break
+                    for ((key, value) in known) {
+                        if (target.contains(key)) {
+                            try {
+                                pm.getPackageInfo(value, 0)
+                                pkg = value
+                                break
+                            } catch (e: Exception) {
+                            }
                         }
                     }
-                    if (pkg == null) return "App not found, Master."
+
+                    if (pkg == null) {
+                        val launcher = Intent(Intent.ACTION_MAIN)
+                        launcher.addCategory(Intent.CATEGORY_LAUNCHER)
+                        val apps = pm.queryIntentActivities(launcher, 0)
+                        for (a in apps) {
+                            val label = a.loadLabel(pm).toString().lowercase()
+                            val packageName = a.activityInfo.packageName
+                            if (label.contains(target) || packageName.contains(target)) {
+                                pkg = packageName
+                                break
+                            }
+                        }
+                    }
+
+                    if (pkg == null) return "App not found on this phone, Master."
                     val li = pm.getLaunchIntentForPackage(pkg) ?: return "Couldn't open app, Master."
                     li.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(li)
-                    return "Opening app, Master."
+                    return "Opening $target, Master."
                 }
                 "web_search" -> {
                     val q = args.optString("query")
@@ -652,7 +573,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     val i = Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(number)))
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(i)
-                    return "Dialer opened for $who, press the green button, Master."
+                    return "Dialer opened for $who, Master."
                 }
                 "send_sms" -> {
                     val who = args.optString("who").trim()
@@ -666,7 +587,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     i.putExtra("sms_body", body)
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(i)
-                    return "Message ready, press send, Master."
+                    return "Message ready, Master."
+                }
+                "lock_phone" -> {
+                    val svc = MaxAccessibilityService.instance
+                        ?: return "Enable Max in Accessibility settings first, Master."
+                    svc.performGlobalAction(
+                        android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN
+                    )
+                    return "Locking the phone, Master."
                 }
                 else -> {}
             }
@@ -911,7 +840,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             if (wakeMode) finish()
             return
         }
-        addBubble(userText, true)
         history.put(JSONObject().put("role", "user").put("content", userText))
         saveHistory()
         setStatus("Max is thinking...")
@@ -932,7 +860,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 val parts = ArrayList<String>()
                 for ((name, args) in calls) {
                     if (name == "control_screen") {
-                        runOnUiThread { setStatus("Max is working on screen...") }
+                        runOnUiThread { setStatus("Max is working...") }
                         parts.add(runAgent(args.optString("goal"), key))
                     } else {
                         parts.add(onMain { runTool(name, args) })
@@ -944,8 +872,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 runOnUiThread {
                     history.put(JSONObject().put("role", "assistant").put("content", reply))
                     saveHistory()
-                    addBubble(reply, false)
-                    setStatus("Max is ready, Master")
+                    setStatus("Say 'Max' anytime, Master")
                     tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "max")
                 }
             } catch (e: Exception) {
