@@ -5,8 +5,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.RadialGradient
-import android.graphics.Shader
 import android.os.Handler
 import android.os.Looper
 import android.util.AttributeSet
@@ -19,26 +17,30 @@ class UltronHudView @JvmOverloads constructor(
 ) : View(context, attrs, defStyle) {
 
     private val cyan = Color.parseColor("#00E5FF")
+    private val brightCyan = Color.parseColor("#4DF2FF")
 
     private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
+        color = cyan
     }
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val orbPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
+        color = brightCyan
     }
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
+        color = Color.parseColor("#3300E5FF")
     }
     private val boltPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#000000")
+        color = Color.BLACK
     }
 
     private var rot1 = 0f
     private var rot2 = 0f
     private var rot3 = 0f
-    private var glowPulse = 1f
+    private var pulse = 1f
 
     private val handler = Handler(Looper.getMainLooper())
     @Volatile private var animating = true
@@ -59,11 +61,11 @@ class UltronHudView @JvmOverloads constructor(
         override fun run() {
             if (!animating) return
             if (grow) {
-                glowPulse += 0.008f
-                if (glowPulse >= 1.15f) grow = false
+                pulse += 0.01f
+                if (pulse >= 1.15f) grow = false
             } else {
-                glowPulse -= 0.008f
-                if (glowPulse <= 0.9f) grow = true
+                pulse -= 0.01f
+                if (pulse <= 0.92f) grow = true
             }
             invalidate()
             handler.postDelayed(this, 30)
@@ -87,16 +89,11 @@ class UltronHudView @JvmOverloads constructor(
         val cy = height / 2f
         val maxR = minOf(width, height) / 2f
 
-        // ===== 1. Big outer cyan haze (bottom layer) =====
-        glowPaint.shader = RadialGradient(cx, cy, maxR * 1.0f,
-            intArrayOf(
-                Color.parseColor("#4000E5FF"),
-                Color.parseColor("#1800E5FF"),
-                Color.parseColor("#00000000")
-            ), floatArrayOf(0f, 0.7f, 1f), Shader.TileMode.CLAMP)
-        canvas.drawCircle(cx, cy, maxR, glowPaint)
+        // 1. Soft outer glow (solid, no gradient)
+        glowPaint.color = Color.parseColor("#4000E5FF")
+        canvas.drawCircle(cx, cy, maxR * 0.95f, glowPaint)
 
-        // ===== 2. Rotating rings =====
+        // 2. Rotating rings
         ringPaint.color = cyan
 
         ringPaint.alpha = 170
@@ -119,35 +116,25 @@ class UltronHudView @JvmOverloads constructor(
         ringPaint.strokeWidth = maxR * 0.018f
         canvas.drawCircle(cx, cy, maxR * 0.46f, ringPaint)
 
-        // ===== 3. Center bright cyan orb (glowing) =====
-        val centerR = maxR * 0.42f
+        // 3. Center bright cyan orb (solid, always visible)
+        val centerR = maxR * 0.42f * pulse
 
-        // Big glow behind the orb
-        glowPaint.shader = RadialGradient(cx, cy, centerR * 2.0f * glowPulse,
-            intArrayOf(
-                Color.parseColor("#9900E5FF"),
-                Color.parseColor("#4400E5FF"),
-                Color.parseColor("#00000000")
-            ), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
-        canvas.drawCircle(cx, cy, centerR * 2.0f * glowPulse, glowPaint)
+        // Glow behind orb
+        glowPaint.color = Color.parseColor("#6600E5FF")
+        canvas.drawCircle(cx, cy, centerR * 1.5f, glowPaint)
 
-        // Solid glowing orb
-        fillPaint.shader = RadialGradient(cx, cy, centerR,
-            intArrayOf(
-                Color.parseColor("#CCFFFFFF"),
-                Color.parseColor("#FF4DF2FF"),
-                Color.parseColor("#FF00C8E5"),
-                Color.parseColor("#FF0088AA")
-            ), floatArrayOf(0f, 0.35f, 0.75f, 1f), Shader.TileMode.CLAMP)
-        canvas.drawCircle(cx, cy, centerR, fillPaint)
+        // Solid cyan orb
+        orbPaint.color = brightCyan
+        canvas.drawCircle(cx, cy, centerR, orbPaint)
 
-        // Thin cyan ring on orb edge
-        ringPaint.alpha = 255
-        ringPaint.strokeWidth = maxR * 0.008f
+        // Thin white highlight ring
+        ringPaint.color = Color.WHITE
+        ringPaint.alpha = 100
+        ringPaint.strokeWidth = maxR * 0.006f
         canvas.drawCircle(cx, cy, centerR, ringPaint)
 
-        // ===== 4. Black lightning bolt (always on top, always visible) =====
-        drawBolt(canvas, cx, cy, centerR * 0.9f)
+        // 4. Black lightning bolt (big, clear, black)
+        drawBolt(canvas, cx, cy, centerR * 0.85f)
     }
 
     private fun drawTicks(canvas: Canvas, cx: Float, cy: Float, r: Float, count: Int, rot: Float) {
@@ -181,14 +168,13 @@ class UltronHudView @JvmOverloads constructor(
     }
 
     private fun drawBolt(canvas: Canvas, cx: Float, cy: Float, s: Float) {
-        // Original simple bolt shape — big and clear
         val p = Path()
-        p.moveTo(cx + s * 0.10f, cy - s * 0.95f)   // top right
-        p.lineTo(cx - s * 0.55f, cy + s * 0.10f)   // left middle outer
-        p.lineTo(cx - s * 0.10f, cy + s * 0.10f)   // left middle inner
-        p.lineTo(cx - s * 0.20f, cy + s * 0.95f)   // bottom
-        p.lineTo(cx + s * 0.55f, cy - s * 0.10f)   // right middle outer
-        p.lineTo(cx + s * 0.10f, cy - s * 0.10f)   // right middle inner
+        p.moveTo(cx + s * 0.15f, cy - s * 1.0f)
+        p.lineTo(cx - s * 0.55f, cy + s * 0.10f)
+        p.lineTo(cx - s * 0.10f, cy + s * 0.10f)
+        p.lineTo(cx - s * 0.20f, cy + s * 1.0f)
+        p.lineTo(cx + s * 0.55f, cy - s * 0.10f)
+        p.lineTo(cx + s * 0.10f, cy - s * 0.10f)
         p.close()
         canvas.drawPath(p, boltPaint)
     }
