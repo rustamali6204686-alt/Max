@@ -184,12 +184,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         root.addView(settingsPanel)
 
-        // HUD long press = menu with options
         headContainer.setOnLongClickListener {
             showHudMenu()
             true
         }
-        // NO onClick — only "Max" voice activates
 
         if (wakeMode) {
             root.visibility = View.GONE
@@ -199,7 +197,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         root.animate().alpha(1f).setDuration(900).start()
 
-        // ALWAYS start WakeService — no overlay check
         if (savedKey.isNotBlank()) {
             ensureWakeService()
         } else {
@@ -241,18 +238,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun ensureWakeService() {
-        // Mic permission check
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
             return
         }
-
-        // Start WakeService — no overlay needed for foreground mic service
         if (!WakeService.running) {
             try {
                 WakeService.start(this)
                 setStatus("Starting wake service...")
-                // Check after 3 sec if it actually started
                 Handler(Looper.getMainLooper()).postDelayed({
                     if (WakeService.running) {
                         setStatus("Say 'Max' anytime, Master")
@@ -265,19 +258,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
         } else {
             setStatus("Say 'Max' anytime, Master")
-        }
-
-        // Ensure overlay permission for STOP button (optional)
-        if (!android.provider.Settings.canDrawOverlays(this)) {
-            try {
-                startActivity(
-                    Intent(
-                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:" + packageName)
-                    )
-                )
-            } catch (e: Exception) {
-            }
         }
     }
 
