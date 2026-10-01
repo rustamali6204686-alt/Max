@@ -35,24 +35,11 @@ class UltronHudView @JvmOverloads constructor(
         color = Color.parseColor("#0A0E14")
     }
 
-    private var rot1 = 0f
-    private var rot2 = 0f
-    private var rot3 = 0f
+    // Sirf pulse rahega, rotation nahi
     private var pulse = 1f
 
     private val handler = Handler(Looper.getMainLooper())
     @Volatile private var animating = true
-
-    private val ticker = object : Runnable {
-        override fun run() {
-            if (!animating) return
-            rot1 = (rot1 + 0.35f) % 360f
-            rot2 = (rot2 - 0.55f) % 360f
-            rot3 = (rot3 + 0.75f) % 360f
-            invalidate()
-            handler.postDelayed(this, 16)
-        }
-    }
 
     private val pulseTicker = object : Runnable {
         private var grow = true
@@ -71,7 +58,6 @@ class UltronHudView @JvmOverloads constructor(
     }
 
     init {
-        handler.post(ticker)
         handler.post(pulseTicker)
     }
 
@@ -98,20 +84,20 @@ class UltronHudView @JvmOverloads constructor(
         ringPaint.color = cyan
         ringPaint.alpha = 180
         ringPaint.strokeWidth = maxR * 0.012f
-        drawTicks(canvas, cx, cy, maxR * 0.94f, 40, rot1)
+        drawTicks(canvas, cx, cy, maxR * 0.94f, 40)
 
         ringPaint.alpha = 220
         ringPaint.strokeWidth = maxR * 0.014f
-        drawDashedRing(canvas, cx, cy, maxR * 0.84f, 6f, 22, rot2)
+        drawDashedRing(canvas, cx, cy, maxR * 0.84f, 6f, 22)
 
         ringPaint.alpha = 255
         ringPaint.strokeWidth = maxR * 0.018f
-        drawArcs(canvas, cx, cy, maxR * 0.72f, rot3)
+        drawArcs(canvas, cx, cy, maxR * 0.72f)
 
         ringPaint.color = cyan
         ringPaint.alpha = 230
         ringPaint.strokeWidth = maxR * 0.012f
-        drawDashedRing(canvas, cx, cy, maxR * 0.60f, 4f, 30, -rot2)
+        drawDashedRing(canvas, cx, cy, maxR * 0.60f, 4f, 30)
 
         ringPaint.alpha = 255
         ringPaint.strokeWidth = maxR * 0.016f
@@ -137,9 +123,9 @@ class UltronHudView @JvmOverloads constructor(
         drawBolt(canvas, cx, cy, centerR * 0.85f)
     }
 
-    private fun drawTicks(canvas: Canvas, cx: Float, cy: Float, r: Float, count: Int, rot: Float) {
+    private fun drawTicks(canvas: Canvas, cx: Float, cy: Float, r: Float, count: Int) {
         for (i in 0 until count) {
-            val a = Math.toRadians((i * (360f / count) + rot).toDouble())
+            val a = Math.toRadians((i * (360f / count)).toDouble())
             val x1 = cx + (r * 0.96f * Math.cos(a)).toFloat()
             val y1 = cy + (r * 0.96f * Math.sin(a)).toFloat()
             val x2 = cx + (r * Math.cos(a)).toFloat()
@@ -149,20 +135,20 @@ class UltronHudView @JvmOverloads constructor(
     }
 
     private fun drawDashedRing(canvas: Canvas, cx: Float, cy: Float, r: Float,
-                               dashLen: Float, segs: Int, rot: Float) {
+                               dashLen: Float, segs: Int) {
         val total = (2 * Math.PI * r).toFloat()
         val dashDeg = dashLen / total * 360f
         val step = 360f / segs
         for (i in 0 until segs) {
-            val start = i * step + rot
+            val start = i * step
             canvas.drawArc(cx - r, cy - r, cx + r, cy + r, start, dashDeg, false, ringPaint)
         }
     }
 
-    private fun drawArcs(canvas: Canvas, cx: Float, cy: Float, r: Float, rot: Float) {
+    private fun drawArcs(canvas: Canvas, cx: Float, cy: Float, r: Float) {
         val arcLen = 40f
         for (i in 0 until 5) {
-            val start = i * (arcLen + 32f) + rot
+            val start = i * (arcLen + 32f)
             canvas.drawArc(cx - r, cy - r, cx + r, cy + r, start, arcLen, false, ringPaint)
         }
     }
