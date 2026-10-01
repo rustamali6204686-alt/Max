@@ -20,26 +20,24 @@ class BootReceiver : BroadcastReceiver() {
         context: Context,
         intent: Intent
     ) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) {
+
+        if (
+            intent.action !=
+            Intent.ACTION_BOOT_COMPLETED
+        ) {
             return
         }
 
-        /*
-         * Do not start the microphone foreground service directly
-         * from BOOT_COMPLETED.
-         *
-         * Android places restrictions on microphone foreground-service
-         * startup from background/boot contexts.
-         *
-         * MainActivity will start WakeService when Max becomes visible.
-         */
         context
             .getSharedPreferences(
                 "max",
                 Context.MODE_PRIVATE
             )
             .edit()
-            .putBoolean("boot_pending", true)
+            .putBoolean(
+                "boot_pending",
+                true
+            )
             .apply()
 
         showBootNotification(context)
@@ -48,10 +46,12 @@ class BootReceiver : BroadcastReceiver() {
     private fun showBootNotification(
         context: Context
     ) {
+
         if (
             Build.VERSION.SDK_INT >=
             Build.VERSION_CODES.TIRAMISU
         ) {
+
             if (
                 context.checkSelfPermission(
                     android.Manifest.permission.POST_NOTIFICATIONS
@@ -71,6 +71,7 @@ class BootReceiver : BroadcastReceiver() {
             Build.VERSION.SDK_INT >=
             Build.VERSION_CODES.O
         ) {
+
             val channel =
                 NotificationChannel(
                     CHANNEL_ID,
@@ -81,7 +82,9 @@ class BootReceiver : BroadcastReceiver() {
                         "Max startup notification"
                 }
 
-            manager.createNotificationChannel(channel)
+            manager.createNotificationChannel(
+                channel
+            )
         }
 
         val launchIntent =
@@ -89,6 +92,7 @@ class BootReceiver : BroadcastReceiver() {
                 context,
                 MainActivity::class.java
             ).apply {
+
                 flags =
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -108,11 +112,14 @@ class BootReceiver : BroadcastReceiver() {
                 Build.VERSION.SDK_INT >=
                 Build.VERSION_CODES.O
             ) {
+
                 Notification.Builder(
                     context,
                     CHANNEL_ID
                 )
+
             } else {
+
                 @Suppress("DEPRECATION")
                 Notification.Builder(context)
             }
@@ -123,19 +130,21 @@ class BootReceiver : BroadcastReceiver() {
                 .setContentText(
                     "Tap to start Max after reboot."
                 )
-                .setContentIntent(pendingIntent)
+                .setContentIntent(
+                    pendingIntent
+                )
                 .setAutoCancel(true)
                 .build()
 
         try {
+
             manager.notify(
                 NOTIFICATION_ID,
                 notification
             )
+
         } catch (_: SecurityException) {
-            // Notification permission may have changed.
         } catch (_: Exception) {
-            // Never crash the boot receiver.
         }
     }
 }
