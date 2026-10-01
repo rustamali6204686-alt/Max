@@ -32,14 +32,13 @@ class UltronHudView @JvmOverloads constructor(
     }
     private val boltPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#0A0E14")
+        color = Color.parseColor("#000000")
     }
 
     private var rot1 = 0f
     private var rot2 = 0f
     private var rot3 = 0f
-    private var pulse = 1f
-    private var glowLevel = 0.7f
+    private var glowPulse = 1f
 
     private val handler = Handler(Looper.getMainLooper())
     @Volatile private var animating = true
@@ -47,10 +46,9 @@ class UltronHudView @JvmOverloads constructor(
     private val ticker = object : Runnable {
         override fun run() {
             if (!animating) return
-            // Slow, subtle rotation
-            rot1 = (rot1 + 0.12f) % 360f
-            rot2 = (rot2 - 0.20f) % 360f
-            rot3 = (rot3 + 0.28f) % 360f
+            rot1 = (rot1 + 0.15f) % 360f
+            rot2 = (rot2 - 0.25f) % 360f
+            rot3 = (rot3 + 0.35f) % 360f
             invalidate()
             handler.postDelayed(this, 16)
         }
@@ -61,16 +59,12 @@ class UltronHudView @JvmOverloads constructor(
         override fun run() {
             if (!animating) return
             if (grow) {
-                pulse += 0.006f
-                glowLevel += 0.008f
-                if (pulse >= 1.06f) grow = false
+                glowPulse += 0.008f
+                if (glowPulse >= 1.15f) grow = false
             } else {
-                pulse -= 0.006f
-                glowLevel -= 0.008f
-                if (pulse <= 0.96f) grow = true
+                glowPulse -= 0.008f
+                if (glowPulse <= 0.9f) grow = true
             }
-            if (glowLevel > 1f) glowLevel = 1f
-            if (glowLevel < 0.5f) glowLevel = 0.5f
             invalidate()
             handler.postDelayed(this, 30)
         }
@@ -93,17 +87,19 @@ class UltronHudView @JvmOverloads constructor(
         val cy = height / 2f
         val maxR = minOf(width, height) / 2f
 
-        // Outer glow with breathing
-        glowPaint.shader = RadialGradient(cx, cy, maxR,
+        // ===== 1. Big outer cyan haze (bottom layer) =====
+        glowPaint.shader = RadialGradient(cx, cy, maxR * 1.0f,
             intArrayOf(
-                Color.parseColor("#00000000"),
-                Color.parseColor("#" + (0x28 * glowLevel).toInt().toString(16).padStart(2, '0') + "00E5FF"),
+                Color.parseColor("#4000E5FF"),
+                Color.parseColor("#1800E5FF"),
                 Color.parseColor("#00000000")
-            ), floatArrayOf(0.55f, 0.85f, 1f), Shader.TileMode.CLAMP)
+            ), floatArrayOf(0f, 0.7f, 1f), Shader.TileMode.CLAMP)
         canvas.drawCircle(cx, cy, maxR, glowPaint)
 
+        // ===== 2. Rotating rings =====
         ringPaint.color = cyan
-        ringPaint.alpha = 180
+
+        ringPaint.alpha = 170
         ringPaint.strokeWidth = maxR * 0.012f
         drawTicks(canvas, cx, cy, maxR * 0.94f, 40, rot1)
 
@@ -115,42 +111,50 @@ class UltronHudView @JvmOverloads constructor(
         ringPaint.strokeWidth = maxR * 0.018f
         drawArcs(canvas, cx, cy, maxR * 0.72f, rot3)
 
-        ringPaint.color = cyan
         ringPaint.alpha = 230
         ringPaint.strokeWidth = maxR * 0.012f
         drawDashedRing(canvas, cx, cy, maxR * 0.60f, 4f, 30, -rot2)
 
         ringPaint.alpha = 255
-        ringPaint.strokeWidth = maxR * 0.016f
+        ringPaint.strokeWidth = maxR * 0.018f
         canvas.drawCircle(cx, cy, maxR * 0.46f, ringPaint)
 
-        // Center orb
-        val centerR = maxR * 0.40f * pulse
-        glowPaint.shader = RadialGradient(cx, cy, centerR * 1.8f,
-            intArrayOf(
-                Color.parseColor("#8800E5FF"),
-                Color.parseColor("#3300E5FF"),
-                Color.parseColor("#00000000")
-            ), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
-        canvas.drawCircle(cx, cy, centerR * 1.8f, glowPaint)
+        // ===== 3. Center bright cyan orb (glowing) =====
+        val centerR = maxR * 0.42f
 
+        // Big glow behind the orb
+        glowPaint.shader = RadialGradient(cx, cy, centerR * 2.0f * glowPulse,
+            intArrayOf(
+                Color.parseColor("#9900E5FF"),
+                Color.parseColor("#4400E5FF"),
+                Color.parseColor("#00000000")
+            ), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        canvas.drawCircle(cx, cy, centerR * 2.0f * glowPulse, glowPaint)
+
+        // Solid glowing orb
         fillPaint.shader = RadialGradient(cx, cy, centerR,
             intArrayOf(
-                Color.parseColor("#D0FFFFFF"),
-                Color.parseColor("#FF00E5FF"),
-                Color.parseColor("#CC0088AA")
-            ), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+                Color.parseColor("#CCFFFFFF"),
+                Color.parseColor("#FF4DF2FF"),
+                Color.parseColor("#FF00C8E5"),
+                Color.parseColor("#FF0088AA")
+            ), floatArrayOf(0f, 0.35f, 0.75f, 1f), Shader.TileMode.CLAMP)
         canvas.drawCircle(cx, cy, centerR, fillPaint)
 
-        // Lightning bolt — always visible
-        drawBolt(canvas, cx, cy, centerR * 0.85f)
+        // Thin cyan ring on orb edge
+        ringPaint.alpha = 255
+        ringPaint.strokeWidth = maxR * 0.008f
+        canvas.drawCircle(cx, cy, centerR, ringPaint)
+
+        // ===== 4. Black lightning bolt (always on top, always visible) =====
+        drawBolt(canvas, cx, cy, centerR * 0.9f)
     }
 
     private fun drawTicks(canvas: Canvas, cx: Float, cy: Float, r: Float, count: Int, rot: Float) {
         for (i in 0 until count) {
             val a = Math.toRadians((i * (360f / count) + rot).toDouble())
-            val x1 = cx + (r * 0.96f * Math.cos(a)).toFloat()
-            val y1 = cy + (r * 0.96f * Math.sin(a)).toFloat()
+            val x1 = cx + (r * 0.95f * Math.cos(a)).toFloat()
+            val y1 = cy + (r * 0.95f * Math.sin(a)).toFloat()
             val x2 = cx + (r * Math.cos(a)).toFloat()
             val y2 = cy + (r * Math.sin(a)).toFloat()
             canvas.drawLine(x1, y1, x2, y2, ringPaint)
@@ -177,13 +181,14 @@ class UltronHudView @JvmOverloads constructor(
     }
 
     private fun drawBolt(canvas: Canvas, cx: Float, cy: Float, s: Float) {
+        // Original simple bolt shape — big and clear
         val p = Path()
-        p.moveTo(cx + s * 0.15f, cy - s * 0.95f)
-        p.lineTo(cx - s * 0.42f, cy + s * 0.10f)
-        p.lineTo(cx - s * 0.08f, cy + s * 0.10f)
-        p.lineTo(cx - s * 0.15f, cy + s * 0.95f)
-        p.lineTo(cx + s * 0.42f, cy - s * 0.12f)
-        p.lineTo(cx + s * 0.08f, cy - s * 0.12f)
+        p.moveTo(cx + s * 0.10f, cy - s * 0.95f)   // top right
+        p.lineTo(cx - s * 0.55f, cy + s * 0.10f)   // left middle outer
+        p.lineTo(cx - s * 0.10f, cy + s * 0.10f)   // left middle inner
+        p.lineTo(cx - s * 0.20f, cy + s * 0.95f)   // bottom
+        p.lineTo(cx + s * 0.55f, cy - s * 0.10f)   // right middle outer
+        p.lineTo(cx + s * 0.10f, cy - s * 0.10f)   // right middle inner
         p.close()
         canvas.drawPath(p, boltPaint)
     }
