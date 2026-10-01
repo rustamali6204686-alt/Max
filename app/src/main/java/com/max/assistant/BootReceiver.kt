@@ -117,5 +117,5 @@ class BootReceiver : BroadcastReceiver() {
         } catch (_: SecurityException) {
         } catch (_: Exception) {
         }
-    }
-}
+    
+
