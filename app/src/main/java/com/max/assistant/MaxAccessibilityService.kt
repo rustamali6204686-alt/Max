@@ -672,22 +672,4 @@ class MaxAccessibilityService : AccessibilityService() {
 
             "nahi hua"
         }
-    }
-}
-
-Is file mein kya improve hua
-
-- "currentPackage()" safe hai.
-- Screen dump mein fresh snapshot banega.
-- Password fields explicitly protected hain.
-- "tap()" pehle node click, phir clickable parent, phir gesture fallback try karta hai.
-- "typeText()" sirf editable fields mein chalega.
-- "scroll()" safe failure return karega.
-- "press()" sirf allowed system actions accept karega.
-- Accessibility service disconnect hone par "instance" clean ho jayega.
-- Third-party apps ke broken/disappearing nodes se poora service crash nahi hoga.
-- Screen list ki limit 150 items aur 8000 characters rakhi hai.
-
-Tumhare current manifest mein AccessibilityService declaration already present hai, aur "canRetrieveWindowContent"/"canPerformGestures" config mein enabled hain, so basic architecture sahi direction mein hai.
-
-Ab next "accessibility_config.xml" ko clean karna hai. Uske baad "CallSmsReceiver" aur permissions flow check karenge.
+    
