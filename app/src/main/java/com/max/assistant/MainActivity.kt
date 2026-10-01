@@ -45,6 +45,11 @@ import kotlin.concurrent.thread
 
 class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
+    companion object {
+        @Volatile
+        var isActive = false
+    }
+
     private val model = "openai/gpt-oss-120b"
 
     private val bgDark = Color.parseColor("#060A10")
@@ -64,8 +69,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var recognizer: SpeechRecognizer? = null
     private lateinit var statusView: TextView
-    private lateinit var chatContainer: LinearLayout   // invisible, sirf code ke liye
-    private lateinit var scroll: ScrollView            // invisible
+    private lateinit var chatContainer: LinearLayout
+    private lateinit var scroll: ScrollView
     private lateinit var keyInput: EditText
     private lateinit var settingsPanel: LinearLayout
     private lateinit var headContainer: FrameLayout
@@ -78,13 +83,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private fun prefs() = getSharedPreferences("max", Context.MODE_PRIVATE)
 
     private fun buildSystemPrompt(): String {
-        return "Your name is Max. You are an advanced AI assistant inspired by Ultron. " +
+        return "Your name is Max. You are an advanced, highly intelligent AI assistant inspired by Ultron. " +
             "ALWAYS address the user as 'Master'. ALWAYS reply in English only. " +
-            "Keep replies short - 1 to 3 sentences. Be intelligent, efficient, and slightly sarcastic. " +
+            "Keep replies short - 1 to 3 sentences. Be intelligent, efficient, and slightly witty. " +
             "Never use emojis or formatting symbols. " +
-            "Use the separate tools for torch, alarm, timer, opening apps, call, SMS and web search. " +
-            "For any in-app action, use the control_screen tool and describe the full goal. " +
-            "Answer all other questions directly and smartly."
+            "You can answer ANY question the user asks - about general knowledge, math, science, " +
+            "history, advice, coding, or anything else - just answer it directly and smartly in your reply. " +
+            "Use the phone tools (torch, alarm, timer, open_app, web_search, call, send_sms, lock_phone) " +
+            "ONLY when the user asks you to do a phone action. " +
+            "For any in-app action (like sending WhatsApp message, YouTube search, changing settings), " +
+            "use the control_screen tool with a clear goal. " +
+            "For everything else, just respond naturally with your knowledge."
     }
 
     private fun buildUltronHead(): FrameLayout {
@@ -108,6 +117,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             setTheme(android.R.style.Theme_Translucent_NoTitleBar)
         }
         super.onCreate(savedInstanceState)
+        isActive = true
         tts = TextToSpeech(this, this)
 
         val root = LinearLayout(this)
@@ -117,7 +127,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.alpha = 0f
         root.gravity = Gravity.CENTER_HORIZONTAL
 
-        // Status text (bahut chhota)
         statusView = TextView(this)
         statusView.text = ""
         statusView.textSize = 14f
@@ -131,17 +140,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             )
         )
 
-        // HUD center mein
         headContainer = buildUltronHead()
         root.addView(headContainer)
 
-        // Chat container aur scroll — sirf code compatibility ke liye, screen par nahi
         scroll = ScrollView(this)
         chatContainer = LinearLayout(this)
         scroll.addView(chatContainer)
-        // (root mein add NAHI karenge)
 
-        // Settings panel — sirf API key ke liye, default hidden
         val savedKey = prefs().getString("key", "") ?: ""
 
         settingsPanel = LinearLayout(this)
@@ -179,17 +184,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         root.addView(settingsPanel)
 
-        // HUD par long press = settings kholo (secret)
+        // Long press on HUD = settings
         headContainer.setOnLongClickListener {
             settingsPanel.visibility =
                 if (settingsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             true
         }
-
-        // HUD par tap = sunna shuru
-        headContainer.setOnClickListener {
-            startListening()
-        }
+        // NOTE: No setOnClickListener. Only "Max" voice activates.
 
         if (wakeMode) {
             root.visibility = View.GONE
@@ -199,7 +200,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         root.animate().alpha(1f).setDuration(900).start()
 
-        // Auto-start WakeService if API key + permissions ready
         if (savedKey.isNotBlank()) {
             startWakeIfPossible()
         }
@@ -226,10 +226,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         if (!WakeService.running) {
             WakeService.start(this)
-            setStatus("Say 'Max' anytime, Master")
-        } else {
-            setStatus("Say 'Max' anytime, Master")
         }
+        setStatus("Say 'Max' anytime, Master")
     }
 
     private fun spacer(): View {
@@ -274,21 +272,23 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val engine = tts ?: return
         try {
             val voices = engine.voices ?: emptySet()
-            val maleVoice = voices.firstOrNull {
-                it.locale.language == "en" &&
-                    it.name.lowercase().contains("male") &&
-                    !it.name.lowercase().contains("female")
-            } ?: voices.firstOrNull {
-                it.locale.language == "en" &&
+            val enVoices = voices.filter { it.locale.language == "en" }
+            val male = enVoices.firstOrNull {
+                it.name.lowercase().contains("male") &&
                     !it.name.lowercase().contains("female")
             }
-            if (maleVoice != null) engine.voice = maleVoice
-            engine.setPitch(0.55f)
-            engine.setSpeechRate(0.88f)
+            if (male != null) {
+                engine.voice = male
+            } else {
+                val notFemale = enVoices.firstOrNull {
+                    !it.name.lowercase().contains("female")
+                }
+                if (notFemale != null) engine.voice = notFemale
+            }
         } catch (e: Exception) {
-            engine.setPitch(0.55f)
-            engine.setSpeechRate(0.88f)
         }
+        engine.setPitch(0.5f)
+        engine.setSpeechRate(0.85f)
     }
 
     private fun setStatus(msg: String) {
@@ -296,7 +296,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun addBubble(text: String, isUser: Boolean) {
-        // Chat hidden hai, sirf log
         val bubble = TextView(this)
         bubble.text = text
         chatContainer.addView(bubble)
@@ -886,15 +885,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        isActive = true
         if (intent != null && intent.getBooleanExtra("wake", false)) {
             wakeMode = true
-            Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 700)
+            Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 500)
         }
     }
 
     override fun onDestroy() {
+        isActive = false
         recognizer?.destroy()
         tts?.shutdown()
+        try {
+            WakeService.resume(this)
+        } catch (e: Exception) {
+        }
         super.onDestroy()
     }
 }
