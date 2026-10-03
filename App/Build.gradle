@@ -1,24 +1,13 @@
-apply plugin: 'com.android.application'
-
-android {
-    namespace 'com.example.max'
-    compileSdk 34
-
-    defaultConfig {
-        applicationId "com.example.max"
-        minSdk 24
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
     }
-    
-    buildTypes {
-        release {
-            minifyEnabled false
-        }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
     }
 }
 
-dependencies {
-    implementation 'androidx.appcompat:appcompat:1.6.1'
+tasks.register('clean', Delete) {
+    delete rootProject.buildDir
 }
